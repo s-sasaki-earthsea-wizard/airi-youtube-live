@@ -28,8 +28,13 @@ export interface YouTubeAuthConfig {
   refreshToken: string
 }
 
+export interface YouTubeSimpleConfig {
+  apiKey: string
+  videoId: string
+}
+
 export interface BotConfig {
-  youtube: YouTubeAuthConfig
+  youtube: YouTubeSimpleConfig
   llm: {
     provider: string
     model: string

@@ -19,9 +19,8 @@ async function main() {
   // Load configuration from environment
   const config: BotConfig = {
     youtube: {
-      clientId: env.GOOGLE_CLIENT_ID || '',
-      clientSecret: env.GOOGLE_CLIENT_SECRET || '',
-      refreshToken: env.GOOGLE_REFRESH_TOKEN || '',
+      apiKey: env.YOUTUBE_API_KEY || '',
+      videoId: env.YOUTUBE_VIDEO_ID || '',
     },
     llm: {
       provider: env.LLM_PROVIDER || 'openai',
@@ -34,14 +33,19 @@ async function main() {
       voice: env.TTS_VOICE || 'alloy',
       apiKey: env.TTS_API_KEY || env.LLM_API_KEY || '',
     },
-    outputDir: env.AUDIO_OUTPUT_DIR || './audio-output',
+    outputDir: env.AUDIO_OUTPUT_DIR || '/tmp/airi-youtube-bot/audio',
     pollingIntervalMs: Number.parseInt(env.POLLING_INTERVAL_MS || '5000', 10),
     maxMessagesPerPoll: Number.parseInt(env.MAX_MESSAGES_PER_POLL || '50', 10),
   }
 
   // Validate configuration
-  if (!config.youtube.clientId || !config.youtube.clientSecret || !config.youtube.refreshToken) {
-    log.error('Missing YouTube API credentials. Please run "pnpm auth" first.')
+  if (!config.youtube.apiKey) {
+    log.error('Missing YOUTUBE_API_KEY. Please set it in .env file.')
+    process.exit(1)
+  }
+
+  if (!config.youtube.videoId) {
+    log.error('Missing YOUTUBE_VIDEO_ID. Please set it in .env file.')
     process.exit(1)
   }
 
@@ -50,35 +54,35 @@ async function main() {
     process.exit(1)
   }
 
-  // Initialize YouTube client
-  const youtubeClient = new YouTubeClient(config.youtube)
+  // Initialize YouTube client with API Key
+  const youtubeClient = new YouTubeClient(config.youtube.apiKey)
 
-  // Find active live broadcasts
-  log.log('Searching for active live broadcasts...')
-  const broadcasts = await youtubeClient.getActiveLiveBroadcasts()
+  // Get video info
+  log
+    .withField('videoId', config.youtube.videoId)
+    .log('Fetching video information...')
 
-  if (broadcasts.length === 0) {
-    log.warn('No active live broadcasts found')
-
-    // Check for upcoming broadcasts
-    const upcomingBroadcasts = await youtubeClient.getUpcomingLiveBroadcasts()
-    if (upcomingBroadcasts.length > 0) {
-      log.log('Found upcoming broadcasts:')
-      upcomingBroadcasts.forEach((b) => {
-        log.log(`  - ${b.title} (${b.status})`)
-      })
-      log.log('Please start a live stream and run this bot again.')
-    }
-
+  const videoInfo = await youtubeClient.getVideoInfo(config.youtube.videoId)
+  if (!videoInfo) {
+    log.error('Failed to fetch video information. Check if YOUTUBE_VIDEO_ID is correct.')
     process.exit(1)
   }
 
-  // Use the first active broadcast
-  const broadcast = broadcasts[0]
   log
-    .withField('title', broadcast.title)
-    .withField('liveChatId', broadcast.liveChatId)
-    .log('Connected to live broadcast')
+    .withField('title', videoInfo.title)
+    .withField('status', videoInfo.status)
+    .log('Video found')
+
+  // Get live chat ID
+  const liveChatId = await youtubeClient.getLiveChatId(config.youtube.videoId)
+  if (!liveChatId) {
+    log.error('No active live chat found. Make sure the video is a live stream and has started.')
+    process.exit(1)
+  }
+
+  log
+    .withField('liveChatId', liveChatId)
+    .log('Connected to live chat')
 
   // Import chat provider based on config
   const { openai } = await import('@xsai-ext/providers-cloud')
@@ -91,7 +95,7 @@ async function main() {
   const poller = new LiveChatPoller(
     youtubeClient,
     {
-      liveChatId: broadcast.liveChatId,
+      liveChatId,
       pollingIntervalMs: config.pollingIntervalMs,
       maxMessagesPerPoll: config.maxMessagesPerPoll,
       onMessage: async (message) => {

@@ -128,7 +128,7 @@ export class MessageHandler {
         voice: this.config.tts.voice,
       })
 
-      // Save audio file
+      // Save audio file to temporary directory
       const outputDir = this.config.outputDir
       await fs.mkdir(outputDir, { recursive: true })
 
@@ -138,6 +138,17 @@ export class MessageHandler {
       await fs.writeFile(filepath, Buffer.from(audioBuffer))
 
       this.logger.withField('filepath', filepath).log('Audio file saved')
+
+      // Schedule cleanup: delete file after 5 minutes (assuming it's been played)
+      setTimeout(async () => {
+        try {
+          await fs.unlink(filepath)
+          this.logger.withField('filepath', filepath).log('Temporary audio file deleted')
+        }
+        catch {
+          // File might already be deleted, ignore error
+        }
+      }, 5 * 60 * 1000) // 5 minutes
     }
     catch (error) {
       this.logger

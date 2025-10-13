@@ -1,70 +1,61 @@
-import type { OAuth2Client } from 'google-auth-library'
 import type { youtube_v3 } from 'googleapis'
-
-import type { LiveBroadcast, YouTubeAuthConfig } from '../types'
 
 import { google } from 'googleapis'
 
-import { createOAuth2Client } from './auth'
-
+/**
+ * YouTube client using API Key authentication
+ * Requires YOUTUBE_VIDEO_ID to be set in environment variables
+ */
 export class YouTubeClient {
-  private oauth2Client: OAuth2Client
   private youtube: youtube_v3.Youtube
 
-  constructor(config: YouTubeAuthConfig) {
-    this.oauth2Client = createOAuth2Client(config)
+  constructor(apiKey: string) {
     this.youtube = google.youtube({
       version: 'v3',
-      auth: this.oauth2Client,
+      auth: apiKey,
     })
   }
 
   /**
-   * Get all active live broadcasts for the authenticated channel
+   * Get live chat ID from video ID
+   * Works for both active and upcoming broadcasts
    */
-  async getActiveLiveBroadcasts(): Promise<LiveBroadcast[]> {
-    const response = await this.youtube.liveBroadcasts.list({
-      part: ['snippet', 'status'],
-      broadcastStatus: 'active',
-      mine: true,
+  async getLiveChatId(videoId: string): Promise<string | null> {
+    const response = await this.youtube.videos.list({
+      part: ['liveStreamingDetails'],
+      id: [videoId],
     })
 
-    if (!response.data.items || response.data.items.length === 0) {
-      return []
+    const liveChatId = response.data.items?.[0]?.liveStreamingDetails?.activeLiveChatId
+
+    if (!liveChatId) {
+      return null
     }
 
-    return response.data.items
-      .filter(item => item.snippet?.liveChatId)
-      .map(item => ({
-        id: item.id!,
-        title: item.snippet!.title!,
-        liveChatId: item.snippet!.liveChatId!,
-        status: 'active' as const,
-      }))
+    return liveChatId
   }
 
   /**
-   * Get upcoming live broadcasts
+   * Get video title and status
    */
-  async getUpcomingLiveBroadcasts(): Promise<LiveBroadcast[]> {
-    const response = await this.youtube.liveBroadcasts.list({
-      part: ['snippet', 'status'],
-      broadcastStatus: 'upcoming',
-      mine: true,
+  async getVideoInfo(videoId: string): Promise<{
+    title: string
+    status: string
+  } | null> {
+    const response = await this.youtube.videos.list({
+      part: ['snippet', 'liveStreamingDetails'],
+      id: [videoId],
     })
 
-    if (!response.data.items || response.data.items.length === 0) {
-      return []
+    const item = response.data.items?.[0]
+    if (!item) {
+      return null
     }
 
-    return response.data.items
-      .filter(item => item.snippet?.liveChatId)
-      .map(item => ({
-        id: item.id!,
-        title: item.snippet!.title!,
-        liveChatId: item.snippet!.liveChatId!,
-        status: 'upcoming' as const,
-      }))
+    return {
+      title: item.snippet?.title || 'Unknown',
+      status: item.snippet?.liveBroadcastContent || 'none',
+    }
   }
 
   /**
@@ -93,6 +84,7 @@ export class YouTubeClient {
 
   /**
    * Send a message to the live chat (optional feature)
+   * Note: This requires OAuth authentication and won't work with API Key only
    */
   async sendLiveChatMessage(liveChatId: string, message: string): Promise<void> {
     await this.youtube.liveChatMessages.insert({
