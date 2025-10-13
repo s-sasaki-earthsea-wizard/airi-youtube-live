@@ -22,74 +22,65 @@ async function main() {
       apiKey: env.YOUTUBE_API_KEY || '',
       videoId: env.YOUTUBE_VIDEO_ID || '',
     },
-    llm: {
-      provider: env.LLM_PROVIDER || 'openai',
-      model: env.LLM_MODEL || 'gpt-4o-mini',
-      apiKey: env.LLM_API_KEY || '',
-    },
-    tts: {
-      provider: env.TTS_PROVIDER || 'openai-audio-speech',
-      model: env.TTS_MODEL || 'tts-1',
-      voice: env.TTS_VOICE || 'alloy',
-      apiKey: env.TTS_API_KEY || env.LLM_API_KEY || '',
-    },
-    outputDir: env.AUDIO_OUTPUT_DIR || '/tmp/airi-youtube-bot/audio',
     pollingIntervalMs: Number.parseInt(env.POLLING_INTERVAL_MS || '5000', 10),
     maxMessagesPerPoll: Number.parseInt(env.MAX_MESSAGES_PER_POLL || '50', 10),
   }
 
   // Validate configuration
   if (!config.youtube.apiKey) {
-    log.error('Missing YOUTUBE_API_KEY. Please set it in .env file.')
+    log.error('YOUTUBE_API_KEYが設定されていません。.envファイルに設定してください。')
     process.exit(1)
   }
 
   if (!config.youtube.videoId) {
-    log.error('Missing YOUTUBE_VIDEO_ID. Please set it in .env file.')
+    log.error('YOUTUBE_VIDEO_IDが設定されていません。.envファイルに設定してください。')
     process.exit(1)
   }
 
-  if (!config.llm.apiKey) {
-    log.error('Missing LLM API key. Please set LLM_API_KEY in .env file.')
-    process.exit(1)
+  if (!env.LLM_API_KEY) {
+    log.warn('LLM_API_KEYが設定されていません。応答生成は無効になります。')
+  }
+
+  if (!env.TTS_API_KEY) {
+    log.warn('TTS_API_KEYが設定されていません。音声生成は無効になります。')
   }
 
   // Initialize YouTube client with API Key
   const youtubeClient = new YouTubeClient(config.youtube.apiKey)
 
-  // Get video info
-  log
-    .withField('videoId', config.youtube.videoId)
-    .log('Fetching video information...')
+  // Get video info (optional - skip if quota exceeded)
+  try {
+    log
+      .withField('videoId', config.youtube.videoId)
+      .log('動画情報を取得中...')
 
-  const videoInfo = await youtubeClient.getVideoInfo(config.youtube.videoId)
-  if (!videoInfo) {
-    log.error('Failed to fetch video information. Check if YOUTUBE_VIDEO_ID is correct.')
-    process.exit(1)
+    const videoInfo = await youtubeClient.getVideoInfo(config.youtube.videoId)
+    if (videoInfo) {
+      log
+        .withField('title', videoInfo.title)
+        .withField('status', videoInfo.status)
+        .log('動画が見つかりました')
+    }
   }
-
-  log
-    .withField('title', videoInfo.title)
-    .withField('status', videoInfo.status)
-    .log('Video found')
+  catch (error) {
+    log
+      .withError(error)
+      .warn('動画情報の取得に失敗しました（クォータ超過の可能性）。ライブチャット接続を試みます。')
+  }
 
   // Get live chat ID
   const liveChatId = await youtubeClient.getLiveChatId(config.youtube.videoId)
   if (!liveChatId) {
-    log.error('No active live chat found. Make sure the video is a live stream and has started.')
+    log.error('アクティブなライブチャットが見つかりません。動画がライブストリームであり、開始されているか確認してください。')
     process.exit(1)
   }
 
   log
     .withField('liveChatId', liveChatId)
-    .log('Connected to live chat')
-
-  // Import chat provider based on config
-  const { openai } = await import('@xsai-ext/providers-cloud')
-  const chatProvider = openai()
+    .log('ライブチャットに接続しました')
 
   // Initialize message handler
-  const messageHandler = new MessageHandler(config, chatProvider, log)
+  const messageHandler = new MessageHandler()
 
   // Initialize and start poller
   const poller = new LiveChatPoller(
@@ -99,10 +90,11 @@ async function main() {
       pollingIntervalMs: config.pollingIntervalMs,
       maxMessagesPerPoll: config.maxMessagesPerPoll,
       onMessage: async (message) => {
+        // Handle message with LLM and TTS
         await messageHandler.handleMessage(message)
       },
       onError: (error) => {
-        log.withError(error).error('Live chat poller error')
+        log.withError(error).error('ライブチャットポーラーエラー')
       },
     },
     log,
@@ -110,11 +102,11 @@ async function main() {
 
   poller.start()
 
-  log.log('YouTube bot is now running. Press Ctrl+C to stop.')
+  log.log('YouTube Botが起動しました。停止するにはCtrl+Cを押してください。')
 
   // Graceful shutdown
   async function gracefulShutdown(signal: string) {
-    log.log(`Received ${signal}, shutting down...`)
+    log.log(`${signal}を受信しました。シャットダウン中...`)
     poller.stop()
     process.exit(0)
   }
@@ -129,6 +121,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  log.withError(err).error('Fatal error occurred')
+  log.withError(err).error('致命的なエラーが発生しました')
   process.exit(1)
 })

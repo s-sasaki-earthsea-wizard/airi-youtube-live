@@ -24,7 +24,7 @@
     "@xsai-ext/providers-cloud": "catalog:",
     "@xsai/generate-speech": "catalog:",
     "@xsai/generate-text": "catalog:",
-    "@xsai/shared-chat": "catalog:",
+    "@xsai/utils-chat": "catalog:",
     "dotenv": "^17.2.3",
     "google-auth-library": "^9.0.0",
     "googleapis": "^140.0.0",

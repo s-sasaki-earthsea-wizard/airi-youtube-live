@@ -33,20 +33,13 @@ export interface YouTubeSimpleConfig {
   videoId: string
 }
 
+export interface AiriConfig {
+  url: string
+  token: string
+}
+
 export interface BotConfig {
   youtube: YouTubeSimpleConfig
-  llm: {
-    provider: string
-    model: string
-    apiKey: string
-  }
-  tts: {
-    provider: string
-    model: string
-    voice: string
-    apiKey: string
-  }
-  outputDir: string
   pollingIntervalMs: number
   maxMessagesPerPoll: number
 }

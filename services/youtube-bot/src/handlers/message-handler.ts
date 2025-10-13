@@ -1,167 +1,200 @@
-import type { Logg } from '@guiiai/logg'
-import type { ChatProvider } from '@xsai-ext/providers-cloud'
-
-import type { BotConfig, YouTubeLiveChatMessage } from '../types'
-
-import fs from 'node:fs/promises'
-import path from 'node:path'
+import type { YouTubeLiveChatMessage } from '../types'
 
 import { Buffer } from 'node:buffer'
+import { createWriteStream } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
+import { env } from 'node:process'
 
+import { useLogg } from '@guiiai/logg'
+import { createOpenAI } from '@xsai-ext/providers-cloud'
 import { generateSpeech } from '@xsai/generate-speech'
 import { generateText } from '@xsai/generate-text'
-import { message } from '@xsai/shared-chat'
+import { message } from '@xsai/utils-chat'
+
+const log = useLogg('MessageHandler').useGlobalConfig()
+
+interface ConversationMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
 
 export class MessageHandler {
-  private config: BotConfig
-  private logger: Logg
-  private chatProvider: ChatProvider
-  private conversationHistory: any[] = []
-  private readonly MAX_HISTORY = 20
+  private conversationHistory: ConversationMessage[] = []
+  private readonly maxHistoryLength = 20
+  private readonly audioOutputDir: string
+  private llmProvider: any
+  private ttsProvider: any
 
-  constructor(config: BotConfig, chatProvider: ChatProvider, logger: Logg) {
-    this.config = config
-    this.chatProvider = chatProvider
-    this.logger = logger
+  constructor() {
+    this.audioOutputDir = env.AUDIO_OUTPUT_DIR || './audio-output'
+    this.initializeProviders()
   }
 
-  /**
-   * Handle incoming YouTube Live Chat message
-   */
-  async handleMessage(msg: YouTubeLiveChatMessage): Promise<void> {
+  private initializeProviders() {
+    // LLM プロバイダーの初期化
+    if (!env.LLM_API_KEY) {
+      log.warn('LLM_API_KEYが設定されていません。応答生成は無効です。')
+    }
+    else {
+      this.llmProvider = createOpenAI(
+        env.LLM_API_KEY,
+        env.LLM_API_BASE_URL || 'https://api.openai.com/v1/',
+      )
+      log.log('LLMプロバイダーを初期化しました')
+    }
+
+    // TTS プロバイダーの初期化
+    if (!env.TTS_API_KEY) {
+      log.warn('TTS_API_KEYが設定されていません。音声生成は無効です。')
+    }
+    else {
+      this.ttsProvider = createOpenAI(
+        env.TTS_API_KEY,
+        env.TTS_API_BASE_URL || 'https://api.openai.com/v1/',
+      )
+      log.log('TTSプロバイダーを初期化しました')
+    }
+  }
+
+  async handleMessage(chatMessage: YouTubeLiveChatMessage): Promise<void> {
+    log
+      .withField('author', chatMessage.authorName)
+      .withField('message', chatMessage.message)
+      .log('メッセージを処理中...')
+
     try {
-      this.logger
-        .withField('author', msg.authorName)
-        .withField('message', msg.message)
-        .withField('type', msg.type)
-        .log('Processing message')
-
-      // Add special handling for Super Chats
-      if (msg.type === 'super_chat' && msg.superChatDetails) {
-        const amount = Number.parseInt(msg.superChatDetails.amountMicros, 10) / 1_000_000
-        this.logger
-          .withField('amount', amount)
-          .withField('currency', msg.superChatDetails.currency)
-          .log('Received Super Chat')
-      }
-
-      // Generate AI response
-      const response = await this.generateResponse(msg)
-
-      if (!response) {
-        this.logger.warn('No response generated')
+      // LLMで応答を生成
+      const responseText = await this.generateResponse(chatMessage)
+      if (!responseText) {
+        log.warn('応答テキストが生成されませんでした')
         return
       }
 
-      this.logger.withField('response', response).log('Generated AI response')
+      log
+        .withField('response', responseText)
+        .log('応答を生成しました')
 
-      // Generate TTS audio
-      await this.generateAudio(response, msg.id)
-
-      this.logger.log('Message processing complete')
+      // TTSで音声を生成
+      await this.generateAudio(responseText, chatMessage.id)
     }
     catch (error) {
-      this.logger
-        .withError(error as Error)
-        .error('Error handling message')
+      log.withError(error).error('メッセージ処理中にエラーが発生しました')
     }
   }
 
-  /**
-   * Generate AI response using LLM
-   */
-  private async generateResponse(msg: YouTubeLiveChatMessage): Promise<string> {
-    // Build conversation context
-    const userMessage = msg.type === 'super_chat'
-      ? `[SUPER CHAT ${msg.superChatDetails?.currency} ${Number.parseInt(msg.superChatDetails?.amountMicros || '0', 10) / 1_000_000}] ${msg.authorName}: ${msg.message}`
-      : `${msg.authorName}: ${msg.message}`
-
-    // Add to conversation history
-    this.conversationHistory.push(message.user(userMessage))
-
-    // Keep only recent messages
-    if (this.conversationHistory.length > this.MAX_HISTORY) {
-      this.conversationHistory = this.conversationHistory.slice(-this.MAX_HISTORY)
+  private async generateResponse(chatMessage: YouTubeLiveChatMessage): Promise<string | null> {
+    if (!this.llmProvider) {
+      log.warn('LLMプロバイダーが初期化されていません')
+      return null
     }
 
-    // Add system message for context
-    const messages = [
-      message.system(
-        'You are AIRI, a friendly AI VTuber streaming on YouTube. '
-        + 'Respond naturally to chat messages. Keep responses concise (1-2 sentences). '
-        + 'Be energetic and engaging. When you receive a Super Chat, express gratitude warmly.',
-      ),
-      ...this.conversationHistory,
-    ]
+    // ユーザーメッセージを履歴に追加
+    const userMessage: ConversationMessage = {
+      role: 'user',
+      content: `${chatMessage.authorName}: ${chatMessage.message}`,
+    }
+    this.conversationHistory.push(userMessage)
 
-    // Generate response
-    const result = await generateText({
-      ...this.chatProvider.chat(this.config.llm.model, {
-        apiKey: this.config.llm.apiKey,
-      }),
-      messages,
-    })
+    // 履歴が長すぎる場合は古いものを削除（システムメッセージは保持）
+    if (this.conversationHistory.length > this.maxHistoryLength) {
+      const systemMessages = this.conversationHistory.filter(m => m.role === 'system')
+      const recentMessages = this.conversationHistory
+        .filter(m => m.role !== 'system')
+        .slice(-this.maxHistoryLength)
+      this.conversationHistory = [...systemMessages, ...recentMessages]
+    }
 
-    const responseText = result.text.trim()
+    // システムプロンプトを準備
+    const systemPrompt: ConversationMessage = {
+      role: 'system',
+      content: `あなたはYouTubeライブ配信でコメントに応答するAIアシスタントです。
+視聴者のコメントに対して、親しみやすく、簡潔に応答してください。
+応答は150文字以内に収めてください。`,
+    }
 
-    // Add assistant response to history
-    this.conversationHistory.push(message.assistant(responseText))
+    // メッセージ履歴を準備
+    const messages = [systemPrompt, ...this.conversationHistory]
 
-    return responseText
-  }
-
-  /**
-   * Generate TTS audio from text
-   */
-  private async generateAudio(text: string, messageId: string): Promise<void> {
     try {
-      // Import speech provider dynamically based on config
-      const { openAIAudioSpeech } = await import('@xsai-ext/providers-cloud')
-
-      const speechProvider = openAIAudioSpeech()
-
-      const audioBuffer = await generateSpeech({
-        ...speechProvider.speech(this.config.tts.model, {
-          apiKey: this.config.tts.apiKey,
-        }),
-        input: text,
-        voice: this.config.tts.voice,
+      const result = await generateText({
+        ...this.llmProvider.chat(env.LLM_MODEL || 'gpt-4o-mini'),
+        messages: messages.map(m => message[m.role](m.content)),
+        maxTokens: 200,
       })
 
-      // Save audio file to temporary directory
-      const outputDir = this.config.outputDir
-      await fs.mkdir(outputDir, { recursive: true })
+      const responseText = result.text.trim()
 
-      const filename = `${Date.now()}-${messageId}.mp3`
-      const filepath = path.join(outputDir, filename)
+      // アシスタントの応答を履歴に追加
+      this.conversationHistory.push({
+        role: 'assistant',
+        content: responseText,
+      })
 
-      await fs.writeFile(filepath, Buffer.from(audioBuffer))
-
-      this.logger.withField('filepath', filepath).log('Audio file saved')
-
-      // Schedule cleanup: delete file after 5 minutes (assuming it's been played)
-      setTimeout(async () => {
-        try {
-          await fs.unlink(filepath)
-          this.logger.withField('filepath', filepath).log('Temporary audio file deleted')
-        }
-        catch {
-          // File might already be deleted, ignore error
-        }
-      }, 5 * 60 * 1000) // 5 minutes
+      return responseText
     }
     catch (error) {
-      this.logger
-        .withError(error as Error)
-        .error('Error generating audio')
+      log.withError(error).error('LLM応答生成中にエラーが発生しました')
+      return null
     }
   }
 
-  /**
-   * Clear conversation history
-   */
+  private async generateAudio(text: string, messageId: string): Promise<void> {
+    if (!this.ttsProvider) {
+      log.warn('TTSプロバイダーが初期化されていません')
+      return
+    }
+
+    try {
+      // 出力ディレクトリを作成
+      await mkdir(this.audioOutputDir, { recursive: true })
+
+      // タイムスタンプ付きのファイル名を生成
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+      const filename = `response_${timestamp}_${messageId}.mp3`
+      const filepath = join(this.audioOutputDir, filename)
+
+      log
+        .withField('filepath', filepath)
+        .log('音声ファイルを生成中...')
+
+      // TTSで音声を生成
+      const result = await generateSpeech({
+        ...this.ttsProvider.speech(env.TTS_MODEL || 'tts-1'),
+        input: text,
+        voice: env.TTS_VOICE || 'alloy',
+      })
+
+      // ストリームをファイルに書き込み
+      const writeStream = createWriteStream(filepath)
+      const reader = result.audioStream.getReader()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done)
+          break
+        writeStream.write(Buffer.from(value))
+      }
+
+      writeStream.end()
+
+      await new Promise<void>((resolve, reject) => {
+        writeStream.on('finish', resolve)
+        writeStream.on('error', reject)
+      })
+
+      log
+        .withField('filepath', filepath)
+        .log('音声ファイルを生成しました')
+    }
+    catch (error) {
+      log.withError(error).error('音声生成中にエラーが発生しました')
+    }
+  }
+
+  // 会話履歴をクリア
   clearHistory(): void {
     this.conversationHistory = []
-    this.logger.log('Conversation history cleared')
+    log.log('会話履歴をクリアしました')
   }
 }
