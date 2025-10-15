@@ -100,12 +100,23 @@ onMounted(async () => {
     speechStore.activeSpeechProvider = ttsProvider
     speechStore.activeSpeechModel = ttsModel
 
-    // Set voice object instead of just voice ID
+    // Set voice by adding it to availableVoices first
     if (ttsVoiceId) {
-      speechStore.activeSpeechVoice = {
+      const voiceObject = {
         id: ttsVoiceId,
         name: 'Environment Voice',
       }
+
+      // Initialize availableVoices for this provider if needed
+      if (!speechStore.availableVoices[ttsProvider]) {
+        speechStore.availableVoices[ttsProvider] = []
+      }
+
+      // Add voice to availableVoices array so the watcher can find it
+      speechStore.availableVoices[ttsProvider].push(voiceObject)
+
+      // Now set the voice ID - the watcher will find it in availableVoices
+      speechStore.activeSpeechVoiceId = ttsVoiceId
     }
   }
 
