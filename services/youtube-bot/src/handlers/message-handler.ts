@@ -1,3 +1,5 @@
+import type { Client as AiriClient } from '@proj-airi/server-sdk'
+
 import type { YouTubeLiveChatMessage } from '../types'
 
 import { Buffer } from 'node:buffer'
@@ -25,8 +27,10 @@ export class MessageHandler {
   private readonly audioOutputDir: string
   private llmProvider: any
   private ttsProvider: any
+  private airiClient: AiriClient
 
-  constructor() {
+  constructor(airiClient: AiriClient) {
+    this.airiClient = airiClient
     this.audioOutputDir = env.AUDIO_OUTPUT_DIR || './audio-output'
     this.initializeProviders()
   }
@@ -64,6 +68,17 @@ export class MessageHandler {
       .log('メッセージを処理中...')
 
     try {
+      // YouTube コメントを stage-web に送信（チャット表示用）
+      await this.airiClient.send({
+        type: 'input:text',
+        data: {
+          text: chatMessage.message,
+          author: chatMessage.authorName,
+          source: 'youtube',
+          timestamp: chatMessage.timestamp,
+        },
+      })
+
       // LLMで応答を生成
       const responseText = await this.generateResponse(chatMessage)
       if (!responseText) {
@@ -76,7 +91,28 @@ export class MessageHandler {
         .log('応答を生成しました')
 
       // TTSで音声を生成
-      await this.generateAudio(responseText, chatMessage.id)
+      const audioFilename = await this.generateAudio(responseText, chatMessage.id)
+
+      // AI応答を stage-web に送信（チャット表示 + 音声再生用）
+      await this.airiClient.send({
+        type: 'output:text',
+        data: {
+          text: responseText,
+          author: 'AIRI',
+          source: 'youtube-bot',
+        },
+      })
+
+      // 音声ファイル情報を送信
+      if (audioFilename) {
+        await this.airiClient.send({
+          type: 'output:audio',
+          data: {
+            audioUrl: `http://localhost:3000/audio/${audioFilename}`,
+            text: responseText,
+          },
+        })
+      }
     }
     catch (error) {
       log.withError(error).error('メッセージ処理中にエラーが発生しました')
@@ -139,10 +175,10 @@ export class MessageHandler {
     }
   }
 
-  private async generateAudio(text: string, messageId: string): Promise<void> {
+  private async generateAudio(text: string, messageId: string): Promise<string | null> {
     if (!this.ttsProvider) {
       log.warn('TTSプロバイダーが初期化されていません')
-      return
+      return null
     }
 
     try {
@@ -186,9 +222,12 @@ export class MessageHandler {
       log
         .withField('filepath', filepath)
         .log('音声ファイルを生成しました')
+
+      return filename
     }
     catch (error) {
       log.withError(error).error('音声生成中にエラーが発生しました')
+      return null
     }
   }
 

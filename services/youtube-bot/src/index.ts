@@ -2,7 +2,10 @@ import type { BotConfig } from './types'
 
 import process, { env } from 'node:process'
 
+import express from 'express'
+
 import { Format, LogLevel, setGlobalFormat, setGlobalLogLevel, useLogg } from '@guiiai/logg'
+import { Client as AiriClient } from '@proj-airi/server-sdk'
 
 import { MessageHandler } from './handlers/message-handler'
 import { YouTubeClient } from './youtube/client'
@@ -79,8 +82,32 @@ async function main() {
     .withField('liveChatId', liveChatId)
     .log('ライブチャットに接続しました')
 
-  // Initialize message handler
-  const messageHandler = new MessageHandler()
+  // Initialize AIRI Server client
+  const airiClient = new AiriClient({
+    name: 'youtube-bot',
+    possibleEvents: ['input:text', 'output:text', 'output:audio'],
+    url: env.AIRI_SERVER_URL || 'ws://localhost:6121/ws',
+    token: env.AIRI_SERVER_TOKEN,
+  })
+
+  log.log('AIRI Serverに接続しました')
+
+  // Start HTTP server for audio file serving
+  const audioOutputDir = env.AUDIO_OUTPUT_DIR || './audio-output'
+  const httpPort = Number.parseInt(env.HTTP_PORT || '3000', 10)
+
+  const app = express()
+  app.use('/audio', express.static(audioOutputDir))
+
+  const httpServer = app.listen(httpPort, () => {
+    log
+      .withField('port', httpPort)
+      .withField('audioDir', audioOutputDir)
+      .log('HTTP サーバーが起動しました')
+  })
+
+  // Initialize message handler with AIRI client
+  const messageHandler = new MessageHandler(airiClient)
 
   // Initialize and start poller
   const poller = new LiveChatPoller(
@@ -108,6 +135,10 @@ async function main() {
   async function gracefulShutdown(signal: string) {
     log.log(`${signal}を受信しました。シャットダウン中...`)
     poller.stop()
+    airiClient.close()
+    httpServer.close(() => {
+      log.log('HTTP サーバーを停止しました')
+    })
     process.exit(0)
   }
 
