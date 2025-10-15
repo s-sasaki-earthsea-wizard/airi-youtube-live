@@ -2,6 +2,7 @@
 import { ToasterRoot } from '@proj-airi/stage-ui/components'
 import { useDisplayModelsStore } from '@proj-airi/stage-ui/stores/display-models'
 import { useModsChannelServerStore } from '@proj-airi/stage-ui/stores/mods/api/channel-server'
+import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
 import { useConsciousnessStore } from '@proj-airi/stage-ui/stores/modules/consciousness'
 import { useSpeechStore } from '@proj-airi/stage-ui/stores/modules/speech'
 import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
@@ -30,6 +31,7 @@ const channelServerStore = useModsChannelServerStore()
 const providersStore = useProvidersStore()
 const consciousnessStore = useConsciousnessStore()
 const speechStore = useSpeechStore()
+const airiCardStore = useAiriCardStore()
 
 const primaryColor = computed(() => {
   return isDark.value
@@ -117,6 +119,35 @@ onMounted(async () => {
 
       // Now set the voice ID - the watcher will find it in availableVoices
       speechStore.activeSpeechVoiceId = ttsVoiceId
+    }
+  }
+
+  // Configure character from environment variables
+  const characterName = import.meta.env.VITE_CHARACTER_NAME
+  const systemPromptPath = import.meta.env.VITE_CHARACTER_SYSTEM_PROMPT_PATH
+
+  if (systemPromptPath) {
+    try {
+      const response = await fetch(systemPromptPath)
+      if (response.ok) {
+        const customSystemPrompt = await response.text()
+
+        // Update the default card with custom system prompt
+        const defaultCard = airiCardStore.getCard('default')
+        if (defaultCard) {
+          defaultCard.description = customSystemPrompt
+          if (characterName) {
+            defaultCard.name = characterName
+          }
+          console.info('[App.vue] Custom system prompt loaded from:', systemPromptPath)
+        }
+      }
+      else {
+        console.warn('[App.vue] Failed to load system prompt from:', systemPromptPath, response.statusText)
+      }
+    }
+    catch (error) {
+      console.error('[App.vue] Error loading system prompt:', error)
     }
   }
 
