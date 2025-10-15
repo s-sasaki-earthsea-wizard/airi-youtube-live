@@ -152,91 +152,201 @@ export class IdleTalkHandler {
 ### 概要
 ユーザー（Syotaさん）のブログ、Twitter、SNS投稿などをベクトルデータベースに格納し、セマンティック検索でユーザーの知識・考え方・趣味嗜好を反映した応答を生成する。
 
-### アーキテクチャ
+### 🎉 既存インフラの活用（実装の大幅な簡素化）
+
+**重要な発見**: AIRIプロジェクトには既に**完璧なメモリシステム**が実装されており、新しいテーブルを作る必要がありません！
+
+#### 既存の`memory_fragments`テーブルを活用
+
+**参照ファイル**:
+- スキーマ定義: `services/telegram-bot/src/db/schema.ts:110-136`
+- DB接続: `services/telegram-bot/src/db/index.ts`
+- Docker構成: `services/telegram-bot/docker-compose.yaml:1-16`
+
+**テーブル構造**:
+```typescript
+// services/telegram-bot/src/db/schema.ts から抜粋
+export const memoryFragmentsTable = pgTable('memory_fragments', {
+  id: uuid().primaryKey().defaultRandom(),
+  content: text().notNull(),
+  memory_type: text().notNull(),  // 'working', 'short_term', 'long_term', 'muscle'
+  category: text().notNull(),     // 'chat', 'relationships', 'people', 'life', etc.
+  importance: integer().notNull().default(5),  // 1-10 scale
+  emotional_impact: integer().notNull().default(0),  // -10 to 10 scale
+  created_at: bigint({ mode: 'number' }).notNull(),
+  last_accessed: bigint({ mode: 'number' }).notNull(),
+  access_count: integer().notNull().default(1),
+  metadata: jsonb().notNull().default({}),  // ← プラットフォーム情報を格納
+  content_vector_1536: vector({ dimensions: 1536 }),
+  content_vector_1024: vector({ dimensions: 1024 }),
+  content_vector_768: vector({ dimensions: 768 }),
+  // ... ベクトルインデックス (HNSW) も既に設定済み
+})
+```
+
+#### Twitter/ブログを`memory_fragments`に保存する例
+
+```typescript
+import { useDrizzle } from '@proj-airi/telegram-bot/db'
+import { memoryFragmentsTable } from '@proj-airi/telegram-bot/db/schema'
+
+// Twitterのポストをインサート
+await db.insert(memoryFragmentsTable).values({
+  content: "宝塚の花組が本当に素晴らしい！",
+  memory_type: 'long_term',  // 永続的な記憶
+  category: 'hobby',         // または 'tech', 'opinion' など
+  importance: 7,
+  emotional_impact: 5,
+  metadata: {
+    source: 'twitter',       // ← プラットフォーム識別
+    tweet_id: '1234567890',
+    url: 'https://twitter.com/...',
+    likes: 42,
+    retweets: 10,
+    created_at: '2025-10-01T12:00:00Z'
+  },
+  content_vector_1536: embedding  // OpenAI Embeddings API
+})
+```
+
+#### YouTube Botでの検索例
+
+```typescript
+import { useDrizzle } from '@proj-airi/telegram-bot/db'
+import { memoryFragmentsTable } from '@proj-airi/telegram-bot/db/schema'
+import { sql } from 'drizzle-orm'
+
+const db = useDrizzle()
+const queryEmbedding = await generateEmbedding(userQuestion)
+
+// ベクトル検索（既存機能をそのまま使用）
+const memories = await db.select()
+  .from(memoryFragmentsTable)
+  .where(sql`
+    metadata->>'source' IN ('twitter', 'hatena', 'note')
+    AND 1 - (content_vector_1536 <=> ${queryEmbedding}::vector) > 0.75
+  `)
+  .orderBy(sql`content_vector_1536 <=> ${queryEmbedding}::vector`)
+  .limit(3)
+```
+
+#### 必要な実装（大幅に簡素化）
+
+**services/knowledge-crawler/** を新規作成（約500行）:
+```
+services/knowledge-crawler/
+├── package.json
+├── src/
+│   ├── index.ts                    # メインエントリポイント
+│   ├── importers/
+│   │   ├── base-importer.ts        # 共通ロジック（ベクトル化、DB挿入）
+│   │   ├── twitter-importer.ts     # Twitter OAuth → インポート
+│   │   ├── hatena-importer.ts      # はてなブログ AtomPub → インポート
+│   │   └── note-importer.ts        # note RSS/API → インポート
+│   └── utils/
+│       └── embeddings.ts           # OpenAI Embeddings API
+```
+
+**実装コード量の比較**:
+- ❌ 新規テーブル方式: 約800行（スキーマ設計、マイグレーション、検索ロジック）
+- ✅ 既存スキーマ活用: **約500行**（インポーターのみ）
+
+#### データベース構成
+
+**Docker構成** (`services/telegram-bot/docker-compose.yaml`):
+```yaml
+services:
+  pgvector:
+    image: ghcr.io/tensorchord/pgvecto-rs:pg17-v0.4.0
+    ports:
+      - 5433:5432  # ホスト5433 → コンテナ5432
+    environment:
+      POSTGRES_PASSWORD: '123456'
+    volumes:
+      - ./.postgres/data:/var/lib/postgresql/data  # データ永続化
+```
+
+**起動方法**:
+```bash
+cd services/telegram-bot
+docker compose up -d pgvector
+```
+
+### アーキテクチャ（簡素化版）
 
 ```
 ┌─────────────────────────────────────┐
 │  コンテンツソース                     │
 ├─────────────────────────────────────┤
 │ - 鍵アカウントのTwitter/X             │
-│ - 非公開ブログ（はてな、WordPress等）  │
+│ - 非公開ブログ（はてな、note等）      │
 │ - Mastodon/Bluesky                  │
-│ - 手動入力（趣味、好み、意見）         │
 └─────────────┬───────────────────────┘
               │ OAuth認証で取得
-              │ （鍵垢・非公開でもOK）
               ↓
 ┌─────────────────────────────────────┐
-│  Knowledge Crawler                  │
+│  Knowledge Crawler (新規作成)        │
 │  services/knowledge-crawler/        │
 ├─────────────────────────────────────┤
-│ - Twitter API (OAuth 2.0)          │
-│ - Hatena Blog (AtomPub API)        │
-│ - Mastodon API                      │
-│ - WordPress REST API                │
-│ - テキスト前処理・正規化              │
-│ - 重複除去                           │
+│ - Twitter OAuth 2.0                │
+│ - はてなブログ AtomPub API           │
+│ - note RSS/API                      │
+│ - ベクトル化 (OpenAI Embeddings)    │
 └─────────────┬───────────────────────┘
               │
-              ↓ OpenAI Embeddings API
-              │ （ベクトル化）
+              ↓ INSERT INTO memory_fragments
 ┌─────────────────────────────────────┐
-│  RDS PostgreSQL + pgvector          │
-│  knowledge_base テーブル             │
+│  既存DB (Dockerコンテナ)             │
+│  PostgreSQL 17 + pgvector           │
 ├─────────────────────────────────────┤
-│ - content: TEXT                     │
-│ - embedding: vector(1536)           │
-│ - source: VARCHAR (twitter/blog)    │
-│ - category: VARCHAR (hobby/tech)    │
-│ - tags: TEXT[]                      │
-│ - metadata: JSONB                   │
-│ - created_at: TIMESTAMP             │
+│  memory_fragments テーブル (既存)    │
+│  - content: TEXT                    │
+│  - memory_type: 'long_term'         │
+│  - category: 'hobby'/'tech'/etc     │
+│  - importance: 1-10                 │
+│  - metadata: JSONB ← source情報     │
+│  - content_vector_1536              │
+│  - HNSW インデックス (既存)         │
 └─────────────┬───────────────────────┘
               │
-              ↓ ベクトル検索 (<=> 演算子)
-┌─────────────────────────────────────┐
-│  RAG Search Engine                  │
-│  packages/rag-engine/               │
-├─────────────────────────────────────┤
-│ - セマンティック検索                  │
-│ - コサイン類似度計算                  │
-│ - カテゴリフィルタリング              │
-│ - スコアリング・ランキング            │
-└─────────────┬───────────────────────┘
-              │
-              ↓ コンテキスト注入
+              ↓ ベクトル検索（既存機能）
 ┌─────────────────────────────────────┐
 │  YouTube Bot (Message Handler)      │
 ├─────────────────────────────────────┤
-│ 質問: "宝塚では何組が好き？"          │
-│                                     │
-│ RAG検索結果:                         │
-│ - "花組の芝居が最高" (類似度: 0.92) │
-│ - "雪組のトップスター好き" (0.89)   │
-│                                     │
-│ プロンプト:                          │
-│ 「あなたの過去の発言:               │
-│  - 花組の芝居が最高                 │
-│  - 雪組のトップスター好き           │
-│                                     │
-│  上記を踏まえて答えてください」      │
-│                                     │
-│ → LLM応答: "花組と雪組が特に好き..." │
+│ useDrizzle() でDB接続              │
+│ ↓                                   │
+│ ベクトル検索:                        │
+│  WHERE metadata->>'source' = 'twitter' │
+│  AND cosine_similarity > 0.75       │
+│ ↓                                   │
+│ プロンプトに注入 → LLM応答          │
 └─────────────────────────────────────┘
 ```
 
-### 技術選定
+**重要な変更点**:
+- ❌ **削除**: 独自の`knowledge_base`テーブル
+- ❌ **削除**: RAG Search Engineパッケージ（既存DBの検索機能で十分）
+- ✅ **活用**: 既存の`memory_fragments`テーブル
+- ✅ **活用**: 既存のDrizzle ORM
+- ✅ **活用**: 既存のベクトルインデックス
+
+### 技術選定（変更なし - 既存インフラを活用）
 
 | コンポーネント | 技術 | 理由 |
 |--------------|------|------|
-| ベクトルDB | PostgreSQL + pgvector | 既存インフラ活用、シンプル、SQL互換 |
+| ベクトルDB | **PostgreSQL 17 + pgvector (既存)** | Dockerコンテナで既に構築済み |
+| ORM | **Drizzle ORM (既存)** | スキーマ定義、マイグレーション完備 |
 | Embedding | OpenAI Embeddings API | GPU不要、高品質、激安（月1円以下） |
 | クローラー | Node.js + OAuth 2.0 | 鍵アカウント・非公開コンテンツに対応 |
 | 検索手法 | セマンティック検索（コサイン類似度） | 形態素解析不要、同義語・表記ゆれに強い |
 
-### ベクトル検索の仕組み
+### ベクトル検索の仕組み（既存機能を活用）
 
 ```typescript
+import { useDrizzle } from '@proj-airi/telegram-bot/db'
+import { memoryFragmentsTable } from '@proj-airi/telegram-bot/db/schema'
+import { sql } from 'drizzle-orm'
+
 // 1. テキストをベクトル化（OpenAI APIに投げるだけ）
 const embedding = await openai.embeddings.create({
   model: "text-embedding-3-small",  // 1536次元ベクトル
@@ -244,16 +354,21 @@ const embedding = await openai.embeddings.create({
 })
 // → [0.023, -0.891, 0.442, ..., 0.123]
 
-// 2. ベクトル検索（コサイン類似度）
-const results = await pool.query(`
-  SELECT
-    content,
-    1 - (embedding <=> $1::vector) as similarity
-  FROM knowledge_base
-  WHERE 1 - (embedding <=> $1::vector) > 0.75  -- 閾値
-  ORDER BY embedding <=> $1::vector
-  LIMIT 5
-`, [JSON.stringify(embedding)])
+// 2. ベクトル検索（Drizzle ORMで既存テーブルを検索）
+const db = useDrizzle()
+const results = await db.select({
+  content: memoryFragmentsTable.content,
+  category: memoryFragmentsTable.category,
+  metadata: memoryFragmentsTable.metadata,
+  similarity: sql<number>`1 - (content_vector_1536 <=> ${embedding}::vector)`,
+})
+.from(memoryFragmentsTable)
+.where(sql`
+  metadata->>'source' IN ('twitter', 'hatena', 'note')
+  AND 1 - (content_vector_1536 <=> ${embedding}::vector) > 0.75
+`)
+.orderBy(sql`content_vector_1536 <=> ${embedding}::vector`)
+.limit(5)
 
 // 結果:
 // - "花組の芝居が素晴らしい" (0.92) ← "宝塚"という単語なしでもヒット！
@@ -267,148 +382,35 @@ const results = await pool.query(`
 - ✅ **同義語・表記ゆれに強い**: "宝塚" "ヅカ" "タカラジェンヌ" すべて意味的に近い
 - ✅ **ローカル推論不要**: OpenAI APIに投げるだけ、GPU不要
 - ✅ **激安**: 1万文書のベクトル化で約10円、月次更新は1円以下
+- ✅ **既存インフラ**: テーブル作成不要、マイグレーション不要
 
-### データベーススキーマ（最終設計）
-
-```sql
-CREATE EXTENSION vector;
-
-CREATE TABLE knowledge_base (
-  -- プライマリーキー: SERIAL（シンプルで効率的、デバッグが容易）
-  id SERIAL PRIMARY KEY,
-
-  -- コンテンツ
-  content TEXT NOT NULL,
-  embedding vector(1536) NOT NULL,
-
-  -- メタデータ
-  source VARCHAR(50) NOT NULL,        -- 'twitter', 'blog', 'mastodon', 'manual'
-  source_id VARCHAR(100) NOT NULL,    -- Tweet ID, Blog URL等（重複排除に使用）
-  created_at TIMESTAMP NOT NULL,
-  updated_at TIMESTAMP DEFAULT NOW(),
-  metadata JSONB,                     -- カテゴリ、タグ等の任意情報
-
-  -- 重複排除制約
-  UNIQUE(source, source_id)
-);
-
--- ベクトル検索用インデックス（高速化）
-CREATE INDEX knowledge_embedding_idx
-ON knowledge_base
-USING ivfflat (embedding vector_cosine_ops)
-WITH (lists = 100);
-
--- 時系列検索用インデックス
-CREATE INDEX knowledge_created_at_idx
-ON knowledge_base (created_at DESC);
-
--- ソース別フィルタリング用インデックス
-CREATE INDEX knowledge_source_idx
-ON knowledge_base (source);
-
--- メタデータ検索用インデックス（JSONB）
-CREATE INDEX knowledge_metadata_idx
-ON knowledge_base USING gin (metadata);
-
--- updated_at自動更新トリガー
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ language 'plpgsql';
-
-CREATE TRIGGER update_knowledge_base_updated_at
-BEFORE UPDATE ON knowledge_base
-FOR EACH ROW
-EXECUTE FUNCTION update_updated_at_column();
-```
-
-### 設計上の意思決定
-
-#### 1. SERIAL vs UUID
-- ✅ **SERIAL採用**: シンプル、効率的、デバッグが容易
-- 単一データベースでの運用なので分散ID不要
-- シーケンシャルIDでB-treeインデックスが効率的
-- 1, 2, 3... の連番でログ確認が容易
-
-#### 2. 重複排除戦略
-- `UNIQUE(source, source_id)` 制約で確実に重複排除
-- `source_id`: Tweet ID（例: "1234567890"）やブログURL（例: "https://blog.example.com/post-123"）
-- コンテンツハッシュではなく、外部IDベースで管理（より確実）
-
-#### 3. metadata JSONB
-- カテゴリ、タグ等の柔軟な格納
-- スキーマ変更なしで属性追加可能
-- GINインデックスで高速検索
-
-#### 4. インデックス設計
-- ベクトル検索（ivfflat）: セマンティック検索の高速化
-- 時系列（created_at DESC）: 最近の投稿優先検索
-- ソース（source）: Twitter/ブログ別フィルタリング
-- メタデータ（GIN）: カテゴリ・タグ検索
-
-### 使用例
-
-```typescript
-// 重複を防いでインサート（ON CONFLICT）
-await pool.query(`
-  INSERT INTO knowledge_base (content, embedding, source, source_id, created_at, metadata)
-  VALUES ($1, $2, $3, $4, $5, $6)
-  ON CONFLICT (source, source_id) DO UPDATE
-  SET content = EXCLUDED.content,
-      embedding = EXCLUDED.embedding,
-      updated_at = NOW()
-`, [content, embedding, 'twitter', tweetId, createdAt, { category: 'tech', tags: ['rust'] }])
-
-// カテゴリフィルタ付きRAG検索
-const results = await pool.query(`
-  SELECT content, 1 - (embedding <=> $1::vector) as similarity
-  FROM knowledge_base
-  WHERE metadata->>'category' = $2
-    AND 1 - (embedding <=> $1::vector) > 0.75
-  ORDER BY embedding <=> $1::vector
-  LIMIT 5
-`, [queryEmbedding, 'tech'])
-```
-
-### 実装フェーズ
+### 実装フェーズ（大幅に簡素化）
 
 ```
-Phase 1: 基礎インフラ（1-2週間）
-├─ PostgreSQL + pgvector セットアップ
-├─ テーブル設計・マイグレーション
-├─ 手動データ投入スクリプト
-└─ 基本的なベクトル検索テスト
-
-Phase 2: RAG検索エンジン（1週間）
-├─ @proj-airi/rag-engine パッケージ作成
-├─ OpenAI Embeddings API 統合
-├─ ベクトル検索実装
-└─ カテゴリフィルタリング・スコアリング
-
-Phase 3: コンテンツクローラー（2-3週間）
+Phase 1: コンテンツクローラー（1-2週間）
+├─ services/knowledge-crawler/ パッケージ作成
 ├─ Twitter OAuth 2.0 認証（鍵アカウント対応）
 ├─ はてなブログ AtomPub API 統合
-├─ Mastodon/Bluesky API 統合
-├─ テキスト前処理・重複除去
-└─ 定期実行（手動更新推奨）
+├─ note RSS/API 統合
+├─ OpenAI Embeddings API 統合
+└─ memory_fragments テーブルへのインサート
 
-Phase 4: YouTube Bot 統合（1週間）
-├─ message-handler に RAG検索統合
+Phase 2: YouTube Bot 統合（数時間）
+├─ message-handler に既存DB検索を追加
 ├─ プロンプト構築ロジック
-├─ 応答品質調整（閾値、top-k、カテゴリフィルタ）
-└─ A/Bテスト・評価
+└─ 応答品質調整（閾値、カテゴリフィルタ）
 
-Phase 5: 高度な機能（オプション）
-├─ ハイブリッド検索（ベクトル + 全文検索）
-├─ LLMによるリランキング
+Phase 3: 高度な機能（オプション）
 ├─ 管理WebUI（知識追加・編集）
 └─ 検索分析・ダッシュボード
 ```
 
-### コスト試算
+**削除されたフェーズ**:
+- ❌ Phase 1（基礎インフラ）→ 既に存在
+- ❌ Phase 2（RAG検索エンジン）→ 既存DBで十分
+- ❌ Phase 4（A/Bテスト）→ Phase 2に統合
+
+### コスト試算（大幅削減）
 
 ```
 【初回インデックス化】
@@ -419,15 +421,110 @@ Phase 5: 高度な機能（オプション）
 【月次運用コスト】
 - 新規ツイート 10件/日 × 30日 = 300件 = 約0.07円/月
 - 検索時のベクトル化: 100クエリ = 約0.01円
+- Embeddings API: 約0.1円/月（誤差レベル）
 - 合計: 約0.1円/月
 
 【PostgreSQL】
-- ローカル環境またはクラウドで運用
-- 既存インスタンスを流用可能
+- Dockerコンテナ (既存): 0円
+- S3バックアップ: 約3円/月（10MB × 4週）
 
-【OpenAI API（既存使用分に追加）】
-- Embeddings: 約0.1円/月（誤差レベル）
+【削減されたコスト】
+- ❌ RDS料金: 2,200円/月 → 0円
+- ❌ 新規インフラ構築: 不要
+
+合計: 約3円/月
 ```
+
+### データベースバックアップ戦略
+
+#### 推奨: `make db-backup` + AWS S3
+
+**Makefile** (`Makefile` または `services/telegram-bot/Makefile`):
+```makefile
+.PHONY: db-backup db-backup-s3 db-restore db-list-backups
+
+# ローカルバックアップ
+db-backup:
+	@echo "💾 Creating database backup..."
+	@mkdir -p backups
+	@docker exec telegram-bot-pgvector-1 pg_dump -U postgres postgres | \
+		gzip > backups/db-$(shell date +%Y%m%d-%H%M%S).sql.gz
+	@echo "✅ Backup saved to backups/"
+
+# S3にアップロード
+db-backup-s3: db-backup
+	@echo "📤 Uploading to S3..."
+	@aws s3 cp backups/$$(ls -t backups/ | head -1) \
+		s3://your-bucket-name/airi-backups/
+	@echo "✅ Uploaded to S3"
+
+# S3からダウンロードして復元
+db-restore:
+	@echo "📥 Available backups in S3:"
+	@aws s3 ls s3://your-bucket-name/airi-backups/
+	@read -p "Enter backup filename: " file; \
+	aws s3 cp s3://your-bucket-name/airi-backups/$$file - | \
+	gunzip | docker exec -i telegram-bot-pgvector-1 psql -U postgres postgres
+	@echo "✅ Database restored"
+
+# バックアップ一覧
+db-list-backups:
+	@echo "📂 Local backups:"
+	@ls -lh backups/ 2>/dev/null || echo "No local backups"
+	@echo ""
+	@echo "☁️  S3 backups:"
+	@aws s3 ls s3://your-bucket-name/airi-backups/
+```
+
+**使い方**:
+```bash
+# 配信後やデータ更新後に実行
+make db-backup-s3
+
+# 復元が必要な時
+make db-restore
+```
+
+**コスト**:
+- S3ストレージ: 10MB × 4週 = 40MB → 約3円/月
+- S3 PUT/GET: 週1回 → ほぼ無料
+- **合計**: 約3円/月
+
+**メリット**:
+- ✅ 99.999999999% の耐久性（S3）
+- ✅ いつでもどこでも復元可能
+- ✅ 手動実行のみ（配信前/後に1回）
+- ✅ 暗号化オプション（環境変数で管理）
+
+#### バックアップ不要論（SNS復元戦略）
+
+ソーシャルメディアからの完全復元が可能なため、通常のバックアップは不要とも言えます：
+
+```bash
+# 災害復旧シナリオ: DB完全消失
+
+# 1. Dockerコンテナ再起動
+cd services/telegram-bot
+docker compose up -d pgvector
+
+# 2. 全データ復元（自動）
+pnpm knowledge:restore-all
+
+# 実行内容:
+# - Twitter OAuth認証
+# - 全ツイート取得（5,000件）
+# - ベクトル化してインサート（OpenAI Embeddings API）
+# - はてなブログ等も同様に処理
+#
+# 所要時間: 約10-15分
+# コスト: 約0.5円
+```
+
+**ハイブリッド戦略**（推奨）:
+1. **平常時**: 何もしない
+2. **大きな更新後**: `make db-backup-s3`（念のため）
+3. **災害時**: `pnpm knowledge:restore-all`（10分で復元）
+4. **緊急時**: S3から即座に復元（数分）
 
 ### メリット
 
@@ -511,70 +608,6 @@ ${context}
 }
 ```
 
-### バックアップ・復旧戦略
-
-RAG-based Knowledge Systemの大きな副次的メリットとして、**自然なバックアップ機構**が実現されます。
-
-#### アーキテクチャ上の冗長性
-
-```
-SNS（Twitter/ブログ等）
-    ↓
-真実の源泉（Source of Truth）- 常に最新データが存在
-    ↓
-PostgreSQL + pgvector
-    ↓
-キャッシュ層・高速検索層
-    ↓
-万が一消失しても...OAuth認証があればSNSから完全復元可能
-```
-
-#### 従来のDBバックアップとの比較
-
-| 項目 | 従来のDB | SNS連携アーキテクチャ |
-|------|---------|---------------------|
-| バックアップ頻度 | 日次/時間単位 | リアルタイム（SNS側） |
-| バックアップコスト | 高（ストレージ代） | ゼロ（SNSが保管） |
-| 復元時間 | 数時間 | 10-15分 |
-| 復元の複雑さ | 高 | 低（スクリプト1本） |
-| Point-in-Time Recovery | 可能（複雑） | 可能（SNS APIで期間指定） |
-| データ整合性 | スナップショット時点 | 常に最新 |
-| 多重障害耐性 | DB障害で全損 | SNS側が生きていれば復元可能 |
-
-#### 災害復旧（DR）手順
-
-```bash
-# シナリオ: DB完全消失
-
-# 1. 新しいDBインスタンス作成
-# （PostgreSQLセットアップ）
-
-# 2. pgvectorセットアップ
-psql -c "CREATE EXTENSION vector"
-psql -f migrations/schema.sql
-
-# 3. 全データ復元（自動）
-pnpm knowledge:restore-all
-
-# 実行内容:
-# - Twitter OAuth認証
-# - 全ツイート取得（5,000件）
-# - ベクトル化してインサート（OpenAI Embeddings API）
-# - はてなブログ等も同様に処理
-#
-# 所要時間: 約10-15分
-# コスト: Embeddings APIで約0.5円
-```
-
-#### 副次的メリット
-
-1. **ゼロコストバックアップ** - SNSがバックアップを担保
-2. **高速復旧** - 10-15分で完全復元
-3. **完全自動化** - スクリプト1本で復元
-4. **マルチリージョン展開が容易** - どこでも復元可能
-5. **開発環境の簡単セットアップ** - 本番相当データで即座に開発
-6. **データのバージョン管理** - 特定時点のデータを復元可能
-
 ### 実運用での更新戦略
 
 配信開始時の手動更新が最適です：
@@ -589,7 +622,7 @@ make stream
 # 3. YouTube Bot 自動起動
 ```
 
-#### メリット
+**メリット**:
 - ✅ 最もシンプル（cronやsystemd timer不要）
 - ✅ 確実性（配信前に最新データを確認）
 - ✅ トラブル回避（更新エラーを配信前に検知）
@@ -605,4 +638,5 @@ make stream
 ---
 
 **最終更新**: 2025-10-15
-**ステータス**: 計画段階
+**ステータス**: 実装計画確定（既存インフラ活用で大幅簡素化）
+**実装見積もり**: 約500行、1-2週間
