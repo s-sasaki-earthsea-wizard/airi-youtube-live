@@ -1,0 +1,10 @@
+# Environment variables (contains sensitive API keys)
+.env
+.env.local
+
+# Audio output (temporary files)
+audio-output/
+/tmp/
+
+# Node modules (handled by root .gitignore, but explicit here)
+node_modules/

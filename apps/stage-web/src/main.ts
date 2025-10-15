@@ -14,6 +14,7 @@ import { routes } from 'vue-router/auto-routes'
 
 import App from './App.vue'
 
+import { useWebSocketClient } from './composables/websocket-client'
 import { i18n } from './modules/i18n'
 
 import '@proj-airi/font-cjkfonts-allseto/index.css'
@@ -40,7 +41,9 @@ router.afterEach(() => {
   NProgress.done()
 })
 
-createApp(App)
+const app = createApp(App)
+
+app
   .use(MotionPlugin)
   // TODO: Fix autoAnimatePlugin type error
   .use(autoAnimatePlugin as unknown as Plugin)
@@ -48,4 +51,22 @@ createApp(App)
   .use(pinia)
   .use(i18n)
   .use(Tres)
-  .mount('#app')
+
+// Initialize WebSocket client after Pinia stores are initialized
+let airiWebSocketClient: ReturnType<typeof useWebSocketClient> | null = null
+
+router.isReady().then(() => {
+  try {
+    console.info('[AIRI] Initializing WebSocket client...')
+    airiWebSocketClient = useWebSocketClient()
+    console.info('[AIRI] WebSocket client initialized')
+    console.info('[AIRI] WebSocket client instance:', airiWebSocketClient)
+  }
+  catch (error) {
+    console.error('[AIRI] Failed to initialize WebSocket client:', error)
+  }
+}).catch((error) => {
+  console.error('[AIRI] Router not ready:', error)
+})
+
+app.mount('#app')
