@@ -1,5 +1,71 @@
 export const models = [
   {
+    model_id: 'eleven_v3',
+    name: 'Eleven v3 (Alpha)',
+    can_be_finetuned: false,
+    can_do_text_to_speech: true,
+    can_do_voice_conversion: false,
+    can_use_style: true,
+    can_use_speaker_boost: true,
+    serves_pro_voices: false,
+    token_cost_factor: 1,
+    description: 'Our most expressive and natural-sounding model with advanced emotional range and contextual understanding. Supports 70+ languages. Note: Not optimized for real-time applications.',
+    requires_alpha_access: true,
+    max_characters_request_free_user: 10000,
+    max_characters_request_subscribed_user: 10000,
+    maximum_text_length_per_request: 10000,
+    languages: [
+      {
+        language_id: 'en',
+        name: 'English',
+      },
+      {
+        language_id: 'ja',
+        name: 'Japanese',
+      },
+      {
+        language_id: 'zh',
+        name: 'Chinese',
+      },
+      {
+        language_id: 'de',
+        name: 'German',
+      },
+      {
+        language_id: 'hi',
+        name: 'Hindi',
+      },
+      {
+        language_id: 'fr',
+        name: 'French',
+      },
+      {
+        language_id: 'ko',
+        name: 'Korean',
+      },
+      {
+        language_id: 'pt',
+        name: 'Portuguese',
+      },
+      {
+        language_id: 'it',
+        name: 'Italian',
+      },
+      {
+        language_id: 'es',
+        name: 'Spanish',
+      },
+      {
+        language_id: 'ru',
+        name: 'Russian',
+      },
+    ],
+    model_rates: {
+      character_cost_multiplier: 1,
+    },
+    concurrency_group: 'standard',
+  },
+  {
     model_id: 'eleven_multilingual_v2',
     name: 'Eleven Multilingual v2',
     can_be_finetuned: true,
