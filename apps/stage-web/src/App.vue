@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { OnboardingDialog, ToasterRoot } from '@proj-airi/stage-ui/components'
+import { ToasterRoot } from '@proj-airi/stage-ui/components'
 import { useDisplayModelsStore } from '@proj-airi/stage-ui/stores/display-models'
 import { useModsChannelServerStore } from '@proj-airi/stage-ui/stores/mods/api/channel-server'
-import { useOnboardingStore } from '@proj-airi/stage-ui/stores/onboarding'
+import { useConsciousnessStore } from '@proj-airi/stage-ui/stores/modules/consciousness'
+import { useSpeechStore } from '@proj-airi/stage-ui/stores/modules/speech'
+import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
 import { useSettings } from '@proj-airi/stage-ui/stores/settings'
 import { StageTransitionGroup } from '@proj-airi/ui-transitions'
 import { useDark } from '@vueuse/core'
@@ -23,10 +25,11 @@ const i18n = useI18n()
 const displayModelsStore = useDisplayModelsStore()
 const settingsStore = useSettings()
 const settings = storeToRefs(settingsStore)
-const onboardingStore = useOnboardingStore()
-const { shouldShowSetup } = storeToRefs(onboardingStore)
 const isDark = useDark()
 const channelServerStore = useModsChannelServerStore()
+const providersStore = useProvidersStore()
+const consciousnessStore = useConsciousnessStore()
+const speechStore = useSpeechStore()
 
 const primaryColor = computed(() => {
   return isDark.value
@@ -64,7 +67,50 @@ watch(settings.themeColorsHueDynamic, () => {
 
 // Initialize first-time setup check when app mounts
 onMounted(async () => {
-  onboardingStore.initializeSetupCheck()
+  // Load configuration from environment variables
+  const llmProvider = import.meta.env.VITE_LLM_PROVIDER
+  const llmApiKey = import.meta.env.VITE_LLM_API_KEY
+  const llmBaseUrl = import.meta.env.VITE_LLM_BASE_URL
+  const llmModel = import.meta.env.VITE_LLM_MODEL
+
+  const ttsProvider = import.meta.env.VITE_TTS_PROVIDER
+  const ttsApiKey = import.meta.env.VITE_TTS_API_KEY
+  const ttsBaseUrl = import.meta.env.VITE_TTS_BASE_URL
+  const ttsModel = import.meta.env.VITE_TTS_MODEL
+  const ttsVoiceId = import.meta.env.VITE_TTS_VOICE_ID
+
+  // Configure LLM provider if environment variables are set
+  if (llmProvider && llmApiKey) {
+    providersStore.providers[llmProvider] = {
+      ...providersStore.providers[llmProvider],
+      apiKey: llmApiKey,
+      baseUrl: llmBaseUrl,
+    }
+    consciousnessStore.activeProvider = llmProvider
+    consciousnessStore.activeModel = llmModel
+  }
+
+  // Configure TTS provider if environment variables are set
+  if (ttsProvider && ttsApiKey) {
+    providersStore.providers[ttsProvider] = {
+      ...providersStore.providers[ttsProvider],
+      apiKey: ttsApiKey,
+      baseUrl: ttsBaseUrl,
+    }
+    speechStore.activeSpeechProvider = ttsProvider
+    speechStore.activeSpeechModel = ttsModel
+
+    // Set voice object instead of just voice ID
+    if (ttsVoiceId) {
+      speechStore.activeSpeechVoice = {
+        id: ttsVoiceId,
+        name: 'Environment Voice',
+      }
+    }
+  }
+
+  // Onboarding is disabled for OBS streaming usage
+  // onboardingStore.initializeSetupCheck()
   channelServerStore.initialize()
 
   await displayModelsStore.loadDisplayModelsFromIndexedDB()
@@ -74,15 +120,6 @@ onMounted(async () => {
 onUnmounted(() => {
   channelServerStore.dispose()
 })
-
-// Handle first-time setup events
-function handleSetupConfigured() {
-  onboardingStore.markSetupCompleted()
-}
-
-function handleSetupSkipped() {
-  onboardingStore.markSetupSkipped()
-}
 </script>
 
 <template>
@@ -107,11 +144,14 @@ function handleSetupSkipped() {
   </ToasterRoot>
 
   <!-- First Time Setup Dialog -->
+  <!-- Commented out for OBS streaming usage - onboarding not needed -->
+  <!--
   <OnboardingDialog
     v-model="shouldShowSetup"
     @configured="handleSetupConfigured"
     @skipped="handleSetupSkipped"
   />
+  -->
 
   <!-- License Notice -->
   <LicenseNotice />
