@@ -181,10 +181,10 @@ make db-setup
 # Start knowledge-db service (DB + API server)
 make db-start
 
-# Sync Discord messages (stop → collect → restart)
+# Sync Discord messages (stop collector → stop DB → start DB → start collector)
 make db-sync-discord
 
-# Start Discord collector
+# Start Discord collector (runs in background)
 make collect-discord
 
 # Stop Discord collector
@@ -193,12 +193,21 @@ make collect-discord-stop
 # Restart Discord collector
 make collect-discord-restart
 
+# Export database to JSON
+make db-export
+
 # Check service status
 make db-status
 
 # Stop knowledge-db service
 make db-stop
 ```
+
+**Note**:
+- `make collect-discord` and `make db-sync-discord` run the Discord collector in background
+- Check collector logs: `tail -f /tmp/discord-collector.log`
+- The collector automatically fetches up to 100 historical messages on startup
+- New messages are collected in real-time and automatically vectorized
 
 ## Database Schema
 

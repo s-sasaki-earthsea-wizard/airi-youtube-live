@@ -138,19 +138,35 @@ db-export:
 	@pnpm -F @proj-airi/knowledge-db export:db
 	@echo "✅ Export complete!"
 
-# Discord同期（DB停止 → メッセージ収集 → DB起動）
+# Discord同期（Collector停止 → DB停止 → DB起動 → Collector起動）
 db-sync-discord:
 	@echo "🔄 Syncing Discord messages..."
+	@echo "🛑 Stopping Discord collector..."
 	$(MAKE) collect-discord-stop
+	@echo "🛑 Stopping database..."
 	$(MAKE) db-stop
 	@sleep 2
+	@echo "🚀 Starting database..."
 	$(MAKE) db-start
-	@echo "✅ Discord sync complete!"
-
-# knowledge-db Discord collector起動
-collect-discord:
+	@sleep 2
 	@echo "📡 Starting Discord collector..."
-	@pnpm -F @proj-airi/knowledge-db collect:discord
+	@cd services/knowledge-db && pnpm collect:discord > /tmp/discord-collector.log 2>&1 &
+	@sleep 3
+	@echo "✅ Discord sync complete!"
+	@echo ""
+	@echo "Discord collector is running in background"
+	@echo "Check logs: tail -f /tmp/discord-collector.log"
+	@echo "Stop collector: make collect-discord-stop"
+
+# knowledge-db Discord collector起動（バックグラウンド実行）
+collect-discord:
+	@echo "📡 Starting Discord collector in background..."
+	@cd services/knowledge-db && pnpm collect:discord > /tmp/discord-collector.log 2>&1 &
+	@sleep 3
+	@echo "✅ Discord collector started"
+	@echo ""
+	@echo "Check logs: tail -f /tmp/discord-collector.log"
+	@echo "Stop collector: make collect-discord-stop"
 
 # Discord collector停止
 collect-discord-stop:
