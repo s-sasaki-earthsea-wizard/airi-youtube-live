@@ -2,6 +2,9 @@ import { env } from 'node:process'
 
 import express from 'express'
 
+import { embed } from '@xsai/embed'
+import { sql } from 'drizzle-orm'
+
 import { db } from './db/client.js'
 import { postsTable } from './db/schema.js'
 
@@ -48,26 +51,50 @@ app.get('/posts/source/:source', async (req, res) => {
 })
 
 // Knowledge query endpoint (for RAG integration)
-// This will be enhanced with vector search later
 app.get('/knowledge', async (req, res) => {
   try {
-    const { query, limit = 10 } = req.query
+    const { query, limit = 10, threshold = 0.7 } = req.query
 
     if (!query || typeof query !== 'string') {
       return res.status(400).json({ error: 'Query parameter is required' })
     }
 
-    // TODO: Implement vector similarity search
-    // For now, return recent posts as placeholder
-    const posts = await db
-      .select()
+    // Generate embedding for the query
+    const embeddingResult = await embed({
+      baseURL: env.EMBEDDING_API_BASE_URL!,
+      apiKey: env.EMBEDDING_API_KEY!,
+      model: env.EMBEDDING_MODEL!,
+      input: query,
+    })
+
+    const queryVector = embeddingResult.embedding
+    const vectorString = `[${queryVector.join(',')}]`
+
+    // Perform vector similarity search using cosine distance
+    // cosine distance operator: <=> (lower is more similar)
+    // similarity = 1 - distance
+    const results = await db
+      .select({
+        id: postsTable.id,
+        source: postsTable.source,
+        author: postsTable.author,
+        content: postsTable.content,
+        url: postsTable.url,
+        posted_at: postsTable.posted_at,
+        similarity: sql<number>`1 - (${postsTable.content_vector_1536} <=> ${vectorString}::vector)`,
+      })
       .from(postsTable)
-      .orderBy((t, { desc }) => desc(t.posted_at))
+      .where(sql`${postsTable.content_vector_1536} IS NOT NULL`)
+      .orderBy(sql`${postsTable.content_vector_1536} <=> ${vectorString}::vector`)
       .limit(Number(limit))
+
+    // Filter by similarity threshold
+    const filteredResults = results.filter(r => r.similarity >= Number(threshold))
 
     res.json({
       query,
-      results: posts,
+      results: filteredResults,
+      total: filteredResults.length,
     })
   }
   catch (error) {
