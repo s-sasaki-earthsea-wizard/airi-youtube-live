@@ -1,5 +1,5 @@
 .PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube stop \
-        db-setup db-start db-stop db-status
+        db-setup db-start db-stop db-status collect-discord collect-discord-stop collect-discord-restart
 
 # デフォルトターゲット: ヘルプを表示
 help:
@@ -17,10 +17,13 @@ help:
 	@echo "  make stop             - Stop all services"
 	@echo ""
 	@echo "Knowledge DB:"
-	@echo "  make db-setup         - Initial setup (install deps + start DB + apply schema)"
-	@echo "  make db-start         - Start knowledge-db service (DB + API server)"
-	@echo "  make db-stop          - Stop knowledge-db service"
-	@echo "  make db-status        - Check knowledge-db status"
+	@echo "  make db-setup              - Initial setup (install deps + start DB + apply schema)"
+	@echo "  make db-start              - Start knowledge-db service (DB + API server)"
+	@echo "  make db-stop               - Stop knowledge-db service"
+	@echo "  make db-status             - Check knowledge-db status"
+	@echo "  make collect-discord       - Start Discord message collector"
+	@echo "  make collect-discord-stop  - Stop Discord message collector"
+	@echo "  make collect-discord-restart - Restart Discord message collector"
 	@echo ""
 
 # 配信開始（全サービス起動、ログ最小化）
@@ -126,3 +129,21 @@ db-status:
 	@echo ""
 	@echo "🌐 API Server:"
 	@curl -s http://localhost:3100/health 2>/dev/null | jq . || echo "  ❌ Not running (port 3100)"
+
+# knowledge-db Discord collector起動
+collect-discord:
+	@echo "📡 Starting Discord collector..."
+	@pnpm -F @proj-airi/knowledge-db collect:discord
+
+# Discord collector停止
+collect-discord-stop:
+	@echo "🛑 Stopping Discord collector..."
+	@pkill -f "discord.ts" || true
+	@echo "✅ Discord collector stopped"
+
+# Discord collector再起動
+collect-discord-restart:
+	@echo "🔄 Restarting Discord collector..."
+	@pkill -f "discord.ts" || true
+	@sleep 1
+	@pnpm -F @proj-airi/knowledge-db collect:discord
