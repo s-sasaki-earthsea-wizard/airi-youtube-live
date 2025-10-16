@@ -1,4 +1,5 @@
-.PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube stop
+.PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube stop \
+        db-setup db-start db-stop db-status db-sync-discord collect-discord collect-discord-stop collect-discord-restart
 
 # デフォルトターゲット: ヘルプを表示
 help:
@@ -14,6 +15,16 @@ help:
 	@echo "  make dev-youtube      - Start YouTube Bot only (port 3000)"
 	@echo "  make test-youtube     - Send test message (without YouTube API)"
 	@echo "  make stop             - Stop all services"
+	@echo ""
+	@echo "Knowledge DB:"
+	@echo "  make db-setup              - Initial setup (install deps + start DB + apply schema)"
+	@echo "  make db-start              - Start knowledge-db service (DB + API server)"
+	@echo "  make db-stop               - Stop knowledge-db service"
+	@echo "  make db-status             - Check knowledge-db status"
+	@echo "  make db-sync-discord       - Sync Discord messages (stop → collect → restart)"
+	@echo "  make collect-discord       - Start Discord message collector"
+	@echo "  make collect-discord-stop  - Stop Discord message collector"
+	@echo "  make collect-discord-restart - Restart Discord message collector"
 	@echo ""
 
 # 配信開始（全サービス起動、ログ最小化）
@@ -64,3 +75,85 @@ stop:
 	@pkill -f "stage-web" || true
 	@pkill -f "youtube-bot" || true
 	@echo "✅ All services stopped"
+
+# ========================================
+# Knowledge DB Commands
+# ========================================
+
+# 初回セットアップ（依存関係インストール + DB起動 + スキーマ適用）
+db-setup:
+	@echo "🔧 Setting up knowledge-db (first time)..."
+	@echo "📦 Installing dependencies..."
+	@pnpm install
+	@echo "🐳 Starting PostgreSQL container..."
+	@cd services/knowledge-db && docker-compose up -d
+	@echo "⏳ Waiting for database to be ready..."
+	@sleep 5
+	@echo "🗄️  Generating database schema..."
+	@cd services/knowledge-db && pnpm db:generate
+	@echo "📊 Applying schema to database..."
+	@cd services/knowledge-db && pnpm db:push
+	@echo "✅ Knowledge DB setup complete!"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  - Start API server: make db-start"
+	@echo "  - Check status: make db-status"
+
+# knowledge-db サービス起動（DB + API server）
+db-start:
+	@echo "🚀 Starting knowledge-db service..."
+	@cd services/knowledge-db && docker-compose up -d
+	@sleep 2
+	@echo "🌐 Starting API server (port 3100)..."
+	@cd services/knowledge-db && pnpm start > /dev/null 2>&1 &
+	@sleep 2
+	@echo "✅ Knowledge DB started"
+	@echo ""
+	@echo "Endpoints:"
+	@echo "  - Health: http://localhost:3100/health"
+	@echo "  - Posts:  http://localhost:3100/posts"
+	@echo "  - Query:  http://localhost:3100/knowledge?query=xxx"
+
+# knowledge-db サービス停止
+db-stop:
+	@echo "🛑 Stopping knowledge-db service..."
+	@pkill -f "knowledge-db.*tsx" || true
+	@cd services/knowledge-db && docker-compose down
+	@echo "✅ Knowledge DB stopped"
+
+# knowledge-db ステータス確認
+db-status:
+	@echo "📊 Knowledge DB Status"
+	@echo ""
+	@echo "🐳 Docker Containers:"
+	@cd services/knowledge-db && docker-compose ps || echo "  ❌ Not running"
+	@echo ""
+	@echo "🌐 API Server:"
+	@curl -s http://localhost:3100/health 2>/dev/null | jq . || echo "  ❌ Not running (port 3100)"
+
+# Discord同期（DB停止 → メッセージ収集 → DB起動）
+db-sync-discord:
+	@echo "🔄 Syncing Discord messages..."
+	$(MAKE) collect-discord-stop
+	$(MAKE) db-stop
+	@sleep 2
+	$(MAKE) db-start
+	@echo "✅ Discord sync complete!"
+
+# knowledge-db Discord collector起動
+collect-discord:
+	@echo "📡 Starting Discord collector..."
+	@pnpm -F @proj-airi/knowledge-db collect:discord
+
+# Discord collector停止
+collect-discord-stop:
+	@echo "🛑 Stopping Discord collector..."
+	@pkill -f "discord.ts" || true
+	@echo "✅ Discord collector stopped"
+
+# Discord collector再起動
+collect-discord-restart:
+	@echo "🔄 Restarting Discord collector..."
+	@pkill -f "discord.ts" || true
+	@sleep 1
+	@pnpm -F @proj-airi/knowledge-db collect:discord
