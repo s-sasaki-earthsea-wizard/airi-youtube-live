@@ -93,9 +93,41 @@ GET http://localhost:3100/posts/source/note
 ```
 
 #### Knowledge Query (RAG Integration)
+
+Semantic search using vector similarity:
+
 ```bash
-GET http://localhost:3100/knowledge?query=your_query&limit=10
+GET http://localhost:3100/knowledge?query=好きな作家は誰ですか？&limit=10&threshold=0.7
 ```
+
+**Parameters:**
+- `query` (required): Search query text
+- `limit` (optional, default: 10): Maximum number of results
+- `threshold` (optional, default: 0.7): Minimum similarity score (0-1)
+
+**Response:**
+```json
+{
+  "query": "好きな作家は誰ですか？",
+  "results": [
+    {
+      "id": "uuid",
+      "source": "discord",
+      "author": "megssk",
+      "content": "わたしが好きな作家はアーシュラ・ル＝グウィン...",
+      "url": "https://discord.com/channels/...",
+      "posted_at": 1234567890,
+      "similarity": 0.5380
+    }
+  ],
+  "total": 1
+}
+```
+
+The endpoint automatically:
+1. Generates embeddings for the query using OpenAI API
+2. Performs cosine similarity search against stored vectors
+3. Returns results sorted by similarity score
 
 ### Data Collection
 
@@ -216,11 +248,12 @@ pnpm db:push
 - [x] Discord message collector
 - [x] Real-time vectorization with OpenAI Embeddings
 - [x] Duplicate prevention (UPSERT logic)
+- [x] Vector similarity search endpoint with cosine distance
 - [ ] Implement Twitter API v2 integration
 - [ ] Implement note.com web scraping/API
-- [ ] Implement vector similarity search endpoint
 - [ ] Add authentication for API endpoints
 - [ ] Create scheduled data sync (cron jobs)
+- [ ] Add response caching for knowledge queries
 - [ ] Add monitoring and logging
 
 ## Architecture
