@@ -53,7 +53,7 @@ app.get('/posts/source/:source', async (req, res) => {
 // Knowledge query endpoint (for RAG integration)
 app.get('/knowledge', async (req, res) => {
   try {
-    const { query, limit = 10, threshold = 0.7 } = req.query
+    const { query, limit = 10, threshold = 0.3 } = req.query
 
     if (!query || typeof query !== 'string') {
       return res.status(400).json({ error: 'Query parameter is required' })

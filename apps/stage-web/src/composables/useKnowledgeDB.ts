@@ -38,7 +38,7 @@ function getKnowledgeDBConfig(): KnowledgeDBConfig {
     enabled: import.meta.env.VITE_KNOWLEDGE_DB_ENABLED === 'true',
     url: import.meta.env.VITE_KNOWLEDGE_DB_URL || 'http://localhost:3100',
     limit: Number.parseInt(import.meta.env.VITE_KNOWLEDGE_DB_LIMIT || '3', 10),
-    threshold: Number.parseFloat(import.meta.env.VITE_KNOWLEDGE_DB_THRESHOLD || '0.5'),
+    threshold: Number.parseFloat(import.meta.env.VITE_KNOWLEDGE_DB_THRESHOLD || '0.3'),
   }
 }
 

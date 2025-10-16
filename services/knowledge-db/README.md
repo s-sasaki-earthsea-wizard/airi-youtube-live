@@ -97,13 +97,13 @@ GET http://localhost:3100/posts/source/note
 Semantic search using vector similarity:
 
 ```bash
-GET http://localhost:3100/knowledge?query=好きな作家は誰ですか？&limit=10&threshold=0.7
+GET http://localhost:3100/knowledge?query=好きな作家は誰ですか？&limit=10&threshold=0.3
 ```
 
 **Parameters:**
 - `query` (required): Search query text
 - `limit` (optional, default: 10): Maximum number of results
-- `threshold` (optional, default: 0.7): Minimum similarity score (0-1)
+- `threshold` (optional, default: 0.3): Minimum similarity score (0-1)
 
 **Response:**
 ```json
@@ -151,6 +151,24 @@ pnpm collect:discord
 2. Enable "MESSAGE CONTENT INTENT" in Bot settings
 3. Invite bot to server with permissions: 66560 (View Channels + Read Message History)
 4. Copy bot token and channel ID to `.env`
+
+### Testing Similarity Threshold
+
+Test script to evaluate appropriate similarity threshold for your data:
+
+```bash
+pnpm test:similarity
+```
+
+This script tests various query types (exact matches, related topics, peripheral topics, unrelated queries) against your knowledge database and provides statistics to help you choose the optimal threshold value.
+
+**Example output:**
+- Complete matches: avg 0.47 (min 0.39, max 0.54)
+- Related topics: avg 0.44 (min 0.31, max 0.50)
+- Peripheral topics: avg 0.43 (min 0.37, max 0.54)
+- Unrelated queries: avg 0.31 (min 0.19, max 0.38)
+
+Based on testing, **threshold 0.3-0.4** is recommended for balanced RAG integration.
 
 ### Makefile Commands
 
@@ -211,7 +229,7 @@ stage-web integrates with knowledge-db through the `useKnowledgeDB` composable a
 VITE_KNOWLEDGE_DB_ENABLED=true
 VITE_KNOWLEDGE_DB_URL=http://localhost:3100
 VITE_KNOWLEDGE_DB_LIMIT=3
-VITE_KNOWLEDGE_DB_THRESHOLD=0.5
+VITE_KNOWLEDGE_DB_THRESHOLD=0.3
 ```
 
 **Integration Flow**:
