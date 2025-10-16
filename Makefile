@@ -1,5 +1,5 @@
 .PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube stop \
-        db-setup db-start db-stop db-status collect-discord collect-discord-stop collect-discord-restart
+        db-setup db-start db-stop db-status db-sync-discord collect-discord collect-discord-stop collect-discord-restart
 
 # デフォルトターゲット: ヘルプを表示
 help:
@@ -21,6 +21,7 @@ help:
 	@echo "  make db-start              - Start knowledge-db service (DB + API server)"
 	@echo "  make db-stop               - Stop knowledge-db service"
 	@echo "  make db-status             - Check knowledge-db status"
+	@echo "  make db-sync-discord       - Sync Discord messages (stop → collect → restart)"
 	@echo "  make collect-discord       - Start Discord message collector"
 	@echo "  make collect-discord-stop  - Stop Discord message collector"
 	@echo "  make collect-discord-restart - Restart Discord message collector"
@@ -129,6 +130,15 @@ db-status:
 	@echo ""
 	@echo "🌐 API Server:"
 	@curl -s http://localhost:3100/health 2>/dev/null | jq . || echo "  ❌ Not running (port 3100)"
+
+# Discord同期（DB停止 → メッセージ収集 → DB起動）
+db-sync-discord:
+	@echo "🔄 Syncing Discord messages..."
+	$(MAKE) collect-discord-stop
+	$(MAKE) db-stop
+	@sleep 2
+	$(MAKE) db-start
+	@echo "✅ Discord sync complete!"
 
 # knowledge-db Discord collector起動
 collect-discord:

@@ -7,8 +7,10 @@ A dedicated service for managing AIRI's character knowledge database. Collects a
 - ✅ PostgreSQL + pgvector for vector similarity search
 - ✅ Drizzle ORM for type-safe database operations
 - ✅ REST API for knowledge queries
-- ✅ Data collectors for external services (Twitter, note.com)
+- ✅ Discord message collector with real-time vectorization
+- ✅ OpenAI Embeddings API integration (@xsai/embed)
 - ✅ Vector embeddings support for RAG (Retrieval-Augmented Generation)
+- ✅ Automatic duplicate prevention (UPSERT by source + external_id)
 
 ## Prerequisites
 
@@ -35,9 +37,16 @@ cp .env.example .env
 # Edit .env and configure:
 # - Database credentials
 # - API server port
-# - External service API keys (Twitter, note, etc.)
-# - Embedding service configuration
+# - Discord bot token and channel ID
+# - Embedding service configuration (OpenAI API)
 ```
+
+**Required environment variables:**
+- `DISCORD_BOT_TOKEN`: Discord bot token from Developer Portal
+- `DISCORD_CHANNEL_ID`: Target Discord channel ID for message collection
+- `EMBEDDING_API_KEY`: OpenAI API key for vectorization
+- `EMBEDDING_MODEL`: Model name (default: `text-embedding-3-small`)
+- `EMBEDDING_DIMENSION`: Vector dimension (1536/1024/768)
 
 ### 3. Start Database
 
@@ -90,20 +99,56 @@ GET http://localhost:3100/knowledge?query=your_query&limit=10
 
 ### Data Collection
 
-#### Collect from Twitter
+#### Collect from Discord
+
+Start Discord message collector (monitors channel and collects new messages):
+
 ```bash
-pnpm collect:twitter
+pnpm collect:discord
 ```
 
-#### Collect from note.com
-```bash
-pnpm collect:note
-```
+**Features:**
+- Fetches historical messages (up to 100 on startup)
+- Real-time monitoring for new messages
+- Automatic vectorization using OpenAI Embeddings API
+- Duplicate prevention (UPSERT by Discord message ID)
+- Skips empty messages and bot messages
 
-**Note**: Twitter and note.com collectors are placeholder implementations. You'll need to:
-1. Configure API keys in `.env`
-2. Implement actual API integration in `src/collectors/`
-3. Add embedding generation for vector search
+**Discord Bot Setup:**
+1. Create bot at [Discord Developer Portal](https://discord.com/developers/applications)
+2. Enable "MESSAGE CONTENT INTENT" in Bot settings
+3. Invite bot to server with permissions: 66560 (View Channels + Read Message History)
+4. Copy bot token and channel ID to `.env`
+
+### Makefile Commands
+
+From the project root directory:
+
+```bash
+# Complete setup (first time only)
+make db-setup
+
+# Start knowledge-db service (DB + API server)
+make db-start
+
+# Sync Discord messages (stop → collect → restart)
+make db-sync-discord
+
+# Start Discord collector
+make collect-discord
+
+# Stop Discord collector
+make collect-discord-stop
+
+# Restart Discord collector
+make collect-discord-restart
+
+# Check service status
+make db-status
+
+# Stop knowledge-db service
+make db-stop
+```
 
 ## Database Schema
 
@@ -168,26 +213,60 @@ pnpm db:push
 
 ## Development Roadmap
 
+- [x] Discord message collector
+- [x] Real-time vectorization with OpenAI Embeddings
+- [x] Duplicate prevention (UPSERT logic)
 - [ ] Implement Twitter API v2 integration
 - [ ] Implement note.com web scraping/API
-- [ ] Add embedding generation (OpenAI/local models)
-- [ ] Implement vector similarity search
+- [ ] Implement vector similarity search endpoint
 - [ ] Add authentication for API endpoints
 - [ ] Create scheduled data sync (cron jobs)
-- [ ] Add data deduplication logic
-- [ ] Implement incremental updates
 - [ ] Add monitoring and logging
 
 ## Architecture
 
 ```
-External Services (Twitter, note, etc.)
-  ↓ Data Collection
+Discord Channel
+  ↓ Discord Bot (collect:discord)
+  ↓ Real-time Vectorization (OpenAI Embeddings API)
 PostgreSQL + pgvector
-  ↓ REST API
+  ↓ REST API (port 3100)
 youtube-bot / stage-web
   ↓ RAG (Retrieval-Augmented Generation)
 LLM System Prompt
+```
+
+## Vector Search Example
+
+Query similar posts using cosine distance:
+
+```sql
+SELECT id, author, content,
+       1 - (content_vector_1536 <=> '[0.1, 0.2, ...]'::vector) AS similarity
+FROM posts
+WHERE source = 'discord'
+ORDER BY content_vector_1536 <=> '[0.1, 0.2, ...]'::vector
+LIMIT 5;
+```
+
+Using Drizzle ORM:
+
+```typescript
+import { sql } from 'drizzle-orm'
+import { db } from './db/client'
+import { postsTable } from './db/schema'
+
+const queryVector = [0.1, 0.2, ...] // 1536 dimensions
+
+const results = await db
+  .select({
+    id: postsTable.id,
+    content: postsTable.content,
+    similarity: sql<number>`1 - (${postsTable.content_vector_1536} <=> ${queryVector}::vector)`,
+  })
+  .from(postsTable)
+  .orderBy(sql`${postsTable.content_vector_1536} <=> ${queryVector}::vector`)
+  .limit(5)
 ```
 
 ## License
