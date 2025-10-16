@@ -202,7 +202,31 @@ make db-stop
 
 ## Integration with Other Services
 
-### youtube-bot
+### stage-web (Integrated)
+
+stage-web integrates with knowledge-db through the `useKnowledgeDB` composable and `onBeforeMessageComposed` hook.
+
+**Configuration** (`.env`):
+```env
+VITE_KNOWLEDGE_DB_ENABLED=true
+VITE_KNOWLEDGE_DB_URL=http://localhost:3100
+VITE_KNOWLEDGE_DB_LIMIT=3
+VITE_KNOWLEDGE_DB_THRESHOLD=0.5
+```
+
+**Integration Flow**:
+1. User sends message in stage-web
+2. `onBeforeMessageComposed` hook triggers
+3. `useKnowledgeDB.queryKnowledge(userMessage)` queries knowledge-db API
+4. Relevant results (top 3, similarity >= 0.5) are formatted
+5. System prompt is dynamically updated with knowledge context
+6. LLM generates response with character knowledge
+
+**Files**:
+- `apps/stage-web/src/composables/useKnowledgeDB.ts` - Knowledge DB composable
+- `apps/stage-web/src/App.vue` - Hook registration in `onMounted()`
+
+### youtube-bot (Not Yet Integrated)
 
 The youtube-bot can query this knowledge database to enhance system prompts with relevant character knowledge:
 
@@ -214,10 +238,6 @@ const { results } = await response.json()
 // Inject knowledge into system prompt
 const systemPrompt = `${basePrompt}\n\nRelevant knowledge:\n${results.map(r => r.content).join('\n')}`
 ```
-
-### stage-web
-
-stage-web can also query the knowledge API directly for standalone mode.
 
 ## Database Management
 
