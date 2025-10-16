@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ToasterRoot } from '@proj-airi/stage-ui/components'
-import { useChatStore } from '@proj-airi/stage-ui/stores/chat'
 import { useDisplayModelsStore } from '@proj-airi/stage-ui/stores/display-models'
 import { useModsChannelServerStore } from '@proj-airi/stage-ui/stores/mods/api/channel-server'
 import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
@@ -19,6 +18,7 @@ import { toast, Toaster } from 'vue-sonner'
 import LicenseNotice from './components/LicenseNotice.vue'
 
 import { useKnowledgeDB } from './composables/useKnowledgeDB'
+import { useKnowledgeDBIntegration } from './composables/useKnowledgeDBIntegration'
 import { usePWAStore } from './stores/pwa'
 
 import 'vue-sonner/style.css'
@@ -34,8 +34,8 @@ const providersStore = useProvidersStore()
 const consciousnessStore = useConsciousnessStore()
 const speechStore = useSpeechStore()
 const airiCardStore = useAiriCardStore()
-const chatStore = useChatStore()
 const knowledgeDB = useKnowledgeDB()
+const knowledgeDBIntegration = useKnowledgeDBIntegration()
 
 const primaryColor = computed(() => {
   return isDark.value
@@ -155,7 +155,8 @@ onMounted(async () => {
     }
   }
 
-  // Setup knowledge DB integration hook
+  // Setup knowledge DB integration
+  // The actual hook will be registered by Stage.vue to avoid being cleared by clearHooks()
   if (knowledgeDB.config.enabled) {
     console.info('[App.vue] Knowledge DB integration enabled')
 
@@ -166,36 +167,9 @@ onMounted(async () => {
       baseSystemPrompt = defaultCard.description
     }
 
-    // Register hook to inject knowledge before each message
-    chatStore.onBeforeMessageComposed(async (userMessage: string) => {
-      try {
-        // Query knowledge database for relevant information
-        const knowledgeResponse = await knowledgeDB.queryKnowledge(userMessage)
-
-        if (knowledgeResponse && knowledgeResponse.results.length > 0) {
-          // Format knowledge and inject into system prompt
-          const knowledgeContext = knowledgeDB.formatKnowledgeForPrompt(knowledgeResponse.results)
-
-          // Update the system prompt with knowledge context
-          const defaultCard = airiCardStore.getCard('default')
-          if (defaultCard) {
-            defaultCard.description = baseSystemPrompt + knowledgeContext
-            console.info(`[App.vue] Injected ${knowledgeResponse.total} knowledge results into system prompt`)
-          }
-        }
-        else {
-          // Reset to base prompt if no relevant knowledge found
-          const defaultCard = airiCardStore.getCard('default')
-          if (defaultCard) {
-            defaultCard.description = baseSystemPrompt
-          }
-        }
-      }
-      catch (error) {
-        console.error('[App.vue] Failed to query knowledge DB:', error)
-        // Continue with original system prompt on error
-      }
-    })
+    // Initialize the shared integration state
+    // Stage.vue will use this state to inject knowledge
+    knowledgeDBIntegration.initialize(baseSystemPrompt, knowledgeDB)
   }
 
   // Onboarding is disabled for OBS streaming usage

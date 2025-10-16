@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { WidgetStage } from '@proj-airi/stage-ui/components/scenes'
+import { useChatStore } from '@proj-airi/stage-ui/stores/chat'
 import { useLive2d } from '@proj-airi/stage-ui/stores/live2d'
+import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
 import { breakpointsTailwind, useBreakpoints, useDark, useMouse } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { onMounted, ref, watch } from 'vue'
@@ -13,6 +15,7 @@ import MobileInteractiveArea from '../components/Layouts/MobileInteractiveArea.v
 import AnimatedWave from '../components/Widgets/AnimatedWave.vue'
 
 import { themeColorFromPropertyOf, useThemeColor } from '../composables/theme-color'
+import { useKnowledgeDBIntegration } from '../composables/useKnowledgeDBIntegration'
 
 const dark = useDark()
 const paused = ref(false)
@@ -28,7 +31,57 @@ const isMobile = breakpoints.smaller('md')
 
 const { updateThemeColor } = useThemeColor(themeColorFromPropertyOf('.widgets.top-widgets .colored-area', 'background-color'))
 watch(dark, () => updateThemeColor(), { immediate: true })
-onMounted(() => updateThemeColor())
+
+const chatStore = useChatStore()
+const airiCardStore = useAiriCardStore()
+const knowledgeDBIntegration = useKnowledgeDBIntegration()
+
+onMounted(() => {
+  updateThemeColor()
+
+  // Register knowledge DB hook with persistent flag
+  // This hook will NOT be cleared by Stage.vue's clearHooks() call
+  const integrationState = knowledgeDBIntegration.getState()
+  if (integrationState.enabled && integrationState.knowledgeDB) {
+    console.info('[index.vue] Registering persistent knowledge DB hook')
+
+    chatStore.onBeforeMessageComposed(async (userMessage: string) => {
+      console.info('[index.vue] Knowledge hook triggered for message:', userMessage)
+      try {
+        const { baseSystemPrompt, knowledgeDB } = integrationState
+
+        // Query knowledge database for relevant information
+        const knowledgeResponse = await knowledgeDB!.queryKnowledge(userMessage)
+
+        if (knowledgeResponse && knowledgeResponse.results.length > 0) {
+          // Format knowledge and inject into system prompt
+          const knowledgeContext = knowledgeDB!.formatKnowledgeForPrompt(knowledgeResponse.results)
+
+          // Update the system prompt with knowledge context
+          const defaultCard = airiCardStore.getCard('default')
+          if (defaultCard) {
+            defaultCard.description = baseSystemPrompt + knowledgeContext
+            console.info(`[index.vue] Injected ${knowledgeResponse.total} knowledge results into system prompt`)
+          }
+        }
+        else {
+          // Reset to base prompt if no relevant knowledge found
+          const defaultCard = airiCardStore.getCard('default')
+          if (defaultCard) {
+            defaultCard.description = baseSystemPrompt
+          }
+          console.info('[index.vue] No relevant knowledge found, using base prompt')
+        }
+      }
+      catch (error) {
+        console.error('[index.vue] Failed to query knowledge DB:', error)
+        // Continue with original system prompt on error
+      }
+    }, { persistent: true }) // Mark this hook as persistent
+
+    console.info('[index.vue] Knowledge DB hook registered with persistent flag')
+  }
+})
 </script>
 
 <template>
