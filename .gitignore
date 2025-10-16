@@ -24,7 +24,11 @@ lerna-debug.log*
 *.local.*
 
 # Environment files with sensitive data
-apps/stage-web/.env
+# All .env files are ignored. Use .env.example as template.
+.env
+**/.env
+*.env.local
+**/.env.local
 
 # Audio binaries
 *.pcm
