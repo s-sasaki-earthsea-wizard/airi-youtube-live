@@ -1,5 +1,5 @@
 .PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube stop \
-        db-setup db-start db-stop db-status db-sync-discord collect-discord collect-discord-stop collect-discord-restart
+        db-setup db-start db-stop db-status db-export db-sync-discord collect-discord collect-discord-stop collect-discord-restart
 
 # デフォルトターゲット: ヘルプを表示
 help:
@@ -21,6 +21,7 @@ help:
 	@echo "  make db-start              - Start knowledge-db service (DB + API server)"
 	@echo "  make db-stop               - Stop knowledge-db service"
 	@echo "  make db-status             - Check knowledge-db status"
+	@echo "  make db-export             - Export database to JSON file"
 	@echo "  make db-sync-discord       - Sync Discord messages (stop → collect → restart)"
 	@echo "  make collect-discord       - Start Discord message collector"
 	@echo "  make collect-discord-stop  - Stop Discord message collector"
@@ -131,19 +132,41 @@ db-status:
 	@echo "🌐 API Server:"
 	@curl -s http://localhost:3100/health 2>/dev/null | jq . || echo "  ❌ Not running (port 3100)"
 
-# Discord同期（DB停止 → メッセージ収集 → DB起動）
+# データベースをJSONファイルにエクスポート
+db-export:
+	@echo "📤 Exporting knowledge database to JSON..."
+	@pnpm -F @proj-airi/knowledge-db export:db
+	@echo "✅ Export complete!"
+
+# Discord同期（Collector停止 → DB停止 → DB起動 → Collector起動）
 db-sync-discord:
 	@echo "🔄 Syncing Discord messages..."
+	@echo "🛑 Stopping Discord collector..."
 	$(MAKE) collect-discord-stop
+	@echo "🛑 Stopping database..."
 	$(MAKE) db-stop
 	@sleep 2
+	@echo "🚀 Starting database..."
 	$(MAKE) db-start
-	@echo "✅ Discord sync complete!"
-
-# knowledge-db Discord collector起動
-collect-discord:
+	@sleep 2
 	@echo "📡 Starting Discord collector..."
-	@pnpm -F @proj-airi/knowledge-db collect:discord
+	@cd services/knowledge-db && pnpm collect:discord > /tmp/discord-collector.log 2>&1 &
+	@sleep 3
+	@echo "✅ Discord sync complete!"
+	@echo ""
+	@echo "Discord collector is running in background"
+	@echo "Check logs: tail -f /tmp/discord-collector.log"
+	@echo "Stop collector: make collect-discord-stop"
+
+# knowledge-db Discord collector起動（バックグラウンド実行）
+collect-discord:
+	@echo "📡 Starting Discord collector in background..."
+	@cd services/knowledge-db && pnpm collect:discord > /tmp/discord-collector.log 2>&1 &
+	@sleep 3
+	@echo "✅ Discord collector started"
+	@echo ""
+	@echo "Check logs: tail -f /tmp/discord-collector.log"
+	@echo "Stop collector: make collect-discord-stop"
 
 # Discord collector停止
 collect-discord-stop:

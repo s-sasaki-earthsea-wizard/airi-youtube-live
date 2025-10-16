@@ -97,13 +97,13 @@ GET http://localhost:3100/posts/source/note
 Semantic search using vector similarity:
 
 ```bash
-GET http://localhost:3100/knowledge?query=好きな作家は誰ですか？&limit=10&threshold=0.7
+GET http://localhost:3100/knowledge?query=好きな作家は誰ですか？&limit=10&threshold=0.3
 ```
 
 **Parameters:**
 - `query` (required): Search query text
 - `limit` (optional, default: 10): Maximum number of results
-- `threshold` (optional, default: 0.7): Minimum similarity score (0-1)
+- `threshold` (optional, default: 0.3): Minimum similarity score (0-1)
 
 **Response:**
 ```json
@@ -152,6 +152,24 @@ pnpm collect:discord
 3. Invite bot to server with permissions: 66560 (View Channels + Read Message History)
 4. Copy bot token and channel ID to `.env`
 
+### Testing Similarity Threshold
+
+Test script to evaluate appropriate similarity threshold for your data:
+
+```bash
+pnpm test:similarity
+```
+
+This script tests various query types (exact matches, related topics, peripheral topics, unrelated queries) against your knowledge database and provides statistics to help you choose the optimal threshold value.
+
+**Example output:**
+- Complete matches: avg 0.47 (min 0.39, max 0.54)
+- Related topics: avg 0.44 (min 0.31, max 0.50)
+- Peripheral topics: avg 0.43 (min 0.37, max 0.54)
+- Unrelated queries: avg 0.31 (min 0.19, max 0.38)
+
+Based on testing, **threshold 0.3-0.4** is recommended for balanced RAG integration.
+
 ### Makefile Commands
 
 From the project root directory:
@@ -163,10 +181,10 @@ make db-setup
 # Start knowledge-db service (DB + API server)
 make db-start
 
-# Sync Discord messages (stop → collect → restart)
+# Sync Discord messages (stop collector → stop DB → start DB → start collector)
 make db-sync-discord
 
-# Start Discord collector
+# Start Discord collector (runs in background)
 make collect-discord
 
 # Stop Discord collector
@@ -175,12 +193,21 @@ make collect-discord-stop
 # Restart Discord collector
 make collect-discord-restart
 
+# Export database to JSON
+make db-export
+
 # Check service status
 make db-status
 
 # Stop knowledge-db service
 make db-stop
 ```
+
+**Note**:
+- `make collect-discord` and `make db-sync-discord` run the Discord collector in background
+- Check collector logs: `tail -f /tmp/discord-collector.log`
+- The collector automatically fetches up to 100 historical messages on startup
+- New messages are collected in real-time and automatically vectorized
 
 ## Database Schema
 
@@ -202,7 +229,31 @@ make db-stop
 
 ## Integration with Other Services
 
-### youtube-bot
+### stage-web (Integrated)
+
+stage-web integrates with knowledge-db through the `useKnowledgeDB` composable and `onBeforeMessageComposed` hook.
+
+**Configuration** (`.env`):
+```env
+VITE_KNOWLEDGE_DB_ENABLED=true
+VITE_KNOWLEDGE_DB_URL=http://localhost:3100
+VITE_KNOWLEDGE_DB_LIMIT=3
+VITE_KNOWLEDGE_DB_THRESHOLD=0.3
+```
+
+**Integration Flow**:
+1. User sends message in stage-web
+2. `onBeforeMessageComposed` hook triggers
+3. `useKnowledgeDB.queryKnowledge(userMessage)` queries knowledge-db API
+4. Relevant results (top 3, similarity >= 0.5) are formatted
+5. System prompt is dynamically updated with knowledge context
+6. LLM generates response with character knowledge
+
+**Files**:
+- `apps/stage-web/src/composables/useKnowledgeDB.ts` - Knowledge DB composable
+- `apps/stage-web/src/App.vue` - Hook registration in `onMounted()`
+
+### youtube-bot (Not Yet Integrated)
 
 The youtube-bot can query this knowledge database to enhance system prompts with relevant character knowledge:
 
@@ -214,10 +265,6 @@ const { results } = await response.json()
 // Inject knowledge into system prompt
 const systemPrompt = `${basePrompt}\n\nRelevant knowledge:\n${results.map(r => r.content).join('\n')}`
 ```
-
-### stage-web
-
-stage-web can also query the knowledge API directly for standalone mode.
 
 ## Database Management
 

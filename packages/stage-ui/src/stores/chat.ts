@@ -19,62 +19,106 @@ export interface ErrorMessage {
   content: string
 }
 
+/**
+ * Hook registration options
+ */
+export interface HookOptions {
+  /**
+   * If true, this hook will not be cleared by clearHooks()
+   * Used for persistent hooks like Knowledge DB integration
+   */
+  persistent?: boolean
+}
+
+/**
+ * Internal hook wrapper with persistence flag
+ */
+interface HookWrapper<T> {
+  callback: T
+  persistent: boolean
+}
+
 export const useChatStore = defineStore('chat', () => {
   const { stream, discoverToolsCompatibility } = useLLM()
   const { systemPrompt } = storeToRefs(useAiriCardStore())
 
   const sending = ref(false)
 
-  const onBeforeMessageComposedHooks = ref<Array<(message: string) => Promise<void>>>([])
-  const onAfterMessageComposedHooks = ref<Array<(message: string) => Promise<void>>>([])
-  const onBeforeSendHooks = ref<Array<(message: string) => Promise<void>>>([])
-  const onAfterSendHooks = ref<Array<(message: string) => Promise<void>>>([])
-  const onTokenLiteralHooks = ref<Array<(literal: string) => Promise<void>>>([])
-  const onTokenSpecialHooks = ref<Array<(special: string) => Promise<void>>>([])
-  const onStreamEndHooks = ref<Array<() => Promise<void>>>([])
-  const onAssistantResponseEndHooks = ref<Array<(message: string) => Promise<void>>>([])
+  const onBeforeMessageComposedHooks = ref<Array<HookWrapper<(message: string) => Promise<void>>>>([])
+  const onAfterMessageComposedHooks = ref<Array<HookWrapper<(message: string) => Promise<void>>>>([])
+  const onBeforeSendHooks = ref<Array<HookWrapper<(message: string) => Promise<void>>>>([])
+  const onAfterSendHooks = ref<Array<HookWrapper<(message: string) => Promise<void>>>>([])
+  const onTokenLiteralHooks = ref<Array<HookWrapper<(literal: string) => Promise<void>>>>([])
+  const onTokenSpecialHooks = ref<Array<HookWrapper<(special: string) => Promise<void>>>>([])
+  const onStreamEndHooks = ref<Array<HookWrapper<() => Promise<void>>>>([])
+  const onAssistantResponseEndHooks = ref<Array<HookWrapper<(message: string) => Promise<void>>>>([])
 
-  function onBeforeMessageComposed(cb: (message: string) => Promise<void>) {
-    onBeforeMessageComposedHooks.value.push(cb)
+  function onBeforeMessageComposed(cb: (message: string) => Promise<void>, options?: HookOptions) {
+    onBeforeMessageComposedHooks.value.push({
+      callback: cb,
+      persistent: options?.persistent || false,
+    })
   }
 
-  function onAfterMessageComposed(cb: (message: string) => Promise<void>) {
-    onAfterMessageComposedHooks.value.push(cb)
+  function onAfterMessageComposed(cb: (message: string) => Promise<void>, options?: HookOptions) {
+    onAfterMessageComposedHooks.value.push({
+      callback: cb,
+      persistent: options?.persistent || false,
+    })
   }
 
-  function onBeforeSend(cb: (message: string) => Promise<void>) {
-    onBeforeSendHooks.value.push(cb)
+  function onBeforeSend(cb: (message: string) => Promise<void>, options?: HookOptions) {
+    onBeforeSendHooks.value.push({
+      callback: cb,
+      persistent: options?.persistent || false,
+    })
   }
 
-  function onAfterSend(cb: (message: string) => Promise<void>) {
-    onAfterSendHooks.value.push(cb)
+  function onAfterSend(cb: (message: string) => Promise<void>, options?: HookOptions) {
+    onAfterSendHooks.value.push({
+      callback: cb,
+      persistent: options?.persistent || false,
+    })
   }
 
-  function onTokenLiteral(cb: (literal: string) => Promise<void>) {
-    onTokenLiteralHooks.value.push(cb)
+  function onTokenLiteral(cb: (literal: string) => Promise<void>, options?: HookOptions) {
+    onTokenLiteralHooks.value.push({
+      callback: cb,
+      persistent: options?.persistent || false,
+    })
   }
 
-  function onTokenSpecial(cb: (special: string) => Promise<void>) {
-    onTokenSpecialHooks.value.push(cb)
+  function onTokenSpecial(cb: (special: string) => Promise<void>, options?: HookOptions) {
+    onTokenSpecialHooks.value.push({
+      callback: cb,
+      persistent: options?.persistent || false,
+    })
   }
 
-  function onStreamEnd(cb: () => Promise<void>) {
-    onStreamEndHooks.value.push(cb)
+  function onStreamEnd(cb: () => Promise<void>, options?: HookOptions) {
+    onStreamEndHooks.value.push({
+      callback: cb,
+      persistent: options?.persistent || false,
+    })
   }
 
-  function onAssistantResponseEnd(cb: (message: string) => Promise<void>) {
-    onAssistantResponseEndHooks.value.push(cb)
+  function onAssistantResponseEnd(cb: (message: string) => Promise<void>, options?: HookOptions) {
+    onAssistantResponseEndHooks.value.push({
+      callback: cb,
+      persistent: options?.persistent || false,
+    })
   }
 
   function clearHooks() {
-    onBeforeMessageComposedHooks.value = []
-    onAfterMessageComposedHooks.value = []
-    onBeforeSendHooks.value = []
-    onAfterSendHooks.value = []
-    onTokenLiteralHooks.value = []
-    onTokenSpecialHooks.value = []
-    onStreamEndHooks.value = []
-    onAssistantResponseEndHooks.value = []
+    // Only clear non-persistent hooks
+    onBeforeMessageComposedHooks.value = onBeforeMessageComposedHooks.value.filter(h => h.persistent)
+    onAfterMessageComposedHooks.value = onAfterMessageComposedHooks.value.filter(h => h.persistent)
+    onBeforeSendHooks.value = onBeforeSendHooks.value.filter(h => h.persistent)
+    onAfterSendHooks.value = onAfterSendHooks.value.filter(h => h.persistent)
+    onTokenLiteralHooks.value = onTokenLiteralHooks.value.filter(h => h.persistent)
+    onTokenSpecialHooks.value = onTokenSpecialHooks.value.filter(h => h.persistent)
+    onStreamEndHooks.value = onStreamEndHooks.value.filter(h => h.persistent)
+    onAssistantResponseEndHooks.value = onAssistantResponseEndHooks.value.filter(h => h.persistent)
   }
 
   // I know this nu uh, better than loading all language on rehypeShiki
@@ -121,7 +165,7 @@ export const useChatStore = defineStore('chat', () => {
         return
 
       for (const hook of onBeforeMessageComposedHooks.value) {
-        await hook(sendingMessage)
+        await hook.callback(sendingMessage)
       }
 
       const contentParts: CommonContentPart[] = [{ type: 'text', text: sendingMessage }]
@@ -146,7 +190,7 @@ export const useChatStore = defineStore('chat', () => {
       const parser = useLlmmarkerParser({
         onLiteral: async (literal) => {
           for (const hook of onTokenLiteralHooks.value) {
-            await hook(literal)
+            await hook.callback(literal)
           }
 
           streamingMessage.value.content += literal
@@ -165,7 +209,7 @@ export const useChatStore = defineStore('chat', () => {
         },
         onSpecial: async (special) => {
           for (const hook of onTokenSpecialHooks.value) {
-            await hook(special)
+            await hook.callback(special)
           }
         },
         minLiteralEmitLength: 24, // Avoid emitting literals too fast. This is a magic number and can be changed later.
@@ -197,11 +241,11 @@ export const useChatStore = defineStore('chat', () => {
       })
 
       for (const hook of onAfterMessageComposedHooks.value) {
-        await hook(sendingMessage)
+        await hook.callback(sendingMessage)
       }
 
       for (const hook of onBeforeSendHooks.value) {
-        await hook(sendingMessage)
+        await hook.callback(sendingMessage)
       }
 
       let fullText = ''
@@ -241,15 +285,15 @@ export const useChatStore = defineStore('chat', () => {
             // Instruct the TTS pipeline to flush by calling hooks directly
             const flushSignal = `${TTS_FLUSH_INSTRUCTION}${TTS_FLUSH_INSTRUCTION}`
             for (const hook of onTokenLiteralHooks.value)
-              await hook(flushSignal)
+              await hook.callback(flushSignal)
 
             // Call the end-of-stream hooks
             for (const hook of onStreamEndHooks.value)
-              await hook()
+              await hook.callback()
 
             // Call the end-of-response hooks with the full text
             for (const hook of onAssistantResponseEndHooks.value)
-              await hook(fullText)
+              await hook.callback(fullText)
 
             // eslint-disable-next-line no-console
             console.debug('LLM output:', fullText)
@@ -258,7 +302,7 @@ export const useChatStore = defineStore('chat', () => {
       })
 
       for (const hook of onAfterSendHooks.value) {
-        await hook(sendingMessage)
+        await hook.callback(sendingMessage)
       }
     }
     catch (error) {

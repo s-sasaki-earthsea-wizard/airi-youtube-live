@@ -14,6 +14,20 @@ const app = express()
 const PORT = env.PORT || 3100
 const HOST = env.HOST || '0.0.0.0'
 
+// Enable CORS for all routes
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*')
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200)
+  }
+
+  next()
+})
+
 app.use(express.json())
 
 // Health check endpoint
@@ -53,7 +67,7 @@ app.get('/posts/source/:source', async (req, res) => {
 // Knowledge query endpoint (for RAG integration)
 app.get('/knowledge', async (req, res) => {
   try {
-    const { query, limit = 10, threshold = 0.7 } = req.query
+    const { query, limit = 10, threshold = 0.3 } = req.query
 
     if (!query || typeof query !== 'string') {
       return res.status(400).json({ error: 'Query parameter is required' })

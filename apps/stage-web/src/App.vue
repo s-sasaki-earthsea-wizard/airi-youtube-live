@@ -17,6 +17,8 @@ import { toast, Toaster } from 'vue-sonner'
 
 import LicenseNotice from './components/LicenseNotice.vue'
 
+import { useKnowledgeDB } from './composables/useKnowledgeDB'
+import { useKnowledgeDBIntegration } from './composables/useKnowledgeDBIntegration'
 import { usePWAStore } from './stores/pwa'
 
 import 'vue-sonner/style.css'
@@ -32,6 +34,8 @@ const providersStore = useProvidersStore()
 const consciousnessStore = useConsciousnessStore()
 const speechStore = useSpeechStore()
 const airiCardStore = useAiriCardStore()
+const knowledgeDB = useKnowledgeDB()
+const knowledgeDBIntegration = useKnowledgeDBIntegration()
 
 const primaryColor = computed(() => {
   return isDark.value
@@ -149,6 +153,23 @@ onMounted(async () => {
     catch (error) {
       console.error('[App.vue] Error loading system prompt:', error)
     }
+  }
+
+  // Setup knowledge DB integration
+  // The actual hook will be registered by Stage.vue to avoid being cleared by clearHooks()
+  if (knowledgeDB.config.enabled) {
+    console.info('[App.vue] Knowledge DB integration enabled')
+
+    // Store the original system prompt
+    let baseSystemPrompt = ''
+    const defaultCard = airiCardStore.getCard('default')
+    if (defaultCard) {
+      baseSystemPrompt = defaultCard.description
+    }
+
+    // Initialize the shared integration state
+    // Stage.vue will use this state to inject knowledge
+    knowledgeDBIntegration.initialize(baseSystemPrompt, knowledgeDB)
   }
 
   // Onboarding is disabled for OBS streaming usage
