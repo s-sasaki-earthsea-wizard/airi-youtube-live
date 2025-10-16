@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { OnboardingDialog, ToasterRoot } from '@proj-airi/stage-ui/components'
+import { ToasterRoot } from '@proj-airi/stage-ui/components'
 import { useDisplayModelsStore } from '@proj-airi/stage-ui/stores/display-models'
 import { useModsChannelServerStore } from '@proj-airi/stage-ui/stores/mods/api/channel-server'
-import { useOnboardingStore } from '@proj-airi/stage-ui/stores/onboarding'
+import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
+import { useConsciousnessStore } from '@proj-airi/stage-ui/stores/modules/consciousness'
+import { useSpeechStore } from '@proj-airi/stage-ui/stores/modules/speech'
+import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
 import { useSettings } from '@proj-airi/stage-ui/stores/settings'
 import { StageTransitionGroup } from '@proj-airi/ui-transitions'
 import { useDark } from '@vueuse/core'
@@ -23,10 +26,12 @@ const i18n = useI18n()
 const displayModelsStore = useDisplayModelsStore()
 const settingsStore = useSettings()
 const settings = storeToRefs(settingsStore)
-const onboardingStore = useOnboardingStore()
-const { shouldShowSetup } = storeToRefs(onboardingStore)
 const isDark = useDark()
 const channelServerStore = useModsChannelServerStore()
+const providersStore = useProvidersStore()
+const consciousnessStore = useConsciousnessStore()
+const speechStore = useSpeechStore()
+const airiCardStore = useAiriCardStore()
 
 const primaryColor = computed(() => {
   return isDark.value
@@ -64,7 +69,90 @@ watch(settings.themeColorsHueDynamic, () => {
 
 // Initialize first-time setup check when app mounts
 onMounted(async () => {
-  onboardingStore.initializeSetupCheck()
+  // Load configuration from environment variables
+  const llmProvider = import.meta.env.VITE_LLM_PROVIDER
+  const llmApiKey = import.meta.env.VITE_LLM_API_KEY
+  const llmBaseUrl = import.meta.env.VITE_LLM_BASE_URL
+  const llmModel = import.meta.env.VITE_LLM_MODEL
+
+  const ttsProvider = import.meta.env.VITE_TTS_PROVIDER
+  const ttsApiKey = import.meta.env.VITE_TTS_API_KEY
+  const ttsBaseUrl = import.meta.env.VITE_TTS_BASE_URL
+  const ttsModel = import.meta.env.VITE_TTS_MODEL
+  const ttsVoiceId = import.meta.env.VITE_TTS_VOICE_ID
+
+  // Configure LLM provider if environment variables are set
+  if (llmProvider && llmApiKey) {
+    providersStore.providers[llmProvider] = {
+      ...providersStore.providers[llmProvider],
+      apiKey: llmApiKey,
+      baseUrl: llmBaseUrl,
+    }
+    consciousnessStore.activeProvider = llmProvider
+    consciousnessStore.activeModel = llmModel
+  }
+
+  // Configure TTS provider if environment variables are set
+  if (ttsProvider && ttsApiKey) {
+    providersStore.providers[ttsProvider] = {
+      ...providersStore.providers[ttsProvider],
+      apiKey: ttsApiKey,
+      baseUrl: ttsBaseUrl,
+    }
+    speechStore.activeSpeechProvider = ttsProvider
+    speechStore.activeSpeechModel = ttsModel
+
+    // Set voice by adding it to availableVoices first
+    if (ttsVoiceId) {
+      const voiceObject = {
+        id: ttsVoiceId,
+        name: 'Environment Voice',
+      }
+
+      // Initialize availableVoices for this provider if needed
+      if (!speechStore.availableVoices[ttsProvider]) {
+        speechStore.availableVoices[ttsProvider] = []
+      }
+
+      // Add voice to availableVoices array so the watcher can find it
+      speechStore.availableVoices[ttsProvider].push(voiceObject)
+
+      // Now set the voice ID - the watcher will find it in availableVoices
+      speechStore.activeSpeechVoiceId = ttsVoiceId
+    }
+  }
+
+  // Configure character from environment variables
+  const characterName = import.meta.env.VITE_CHARACTER_NAME
+  const systemPromptPath = import.meta.env.VITE_CHARACTER_SYSTEM_PROMPT_PATH
+
+  if (systemPromptPath) {
+    try {
+      const response = await fetch(systemPromptPath)
+      if (response.ok) {
+        const customSystemPrompt = await response.text()
+
+        // Update the default card with custom system prompt
+        const defaultCard = airiCardStore.getCard('default')
+        if (defaultCard) {
+          defaultCard.description = customSystemPrompt
+          if (characterName) {
+            defaultCard.name = characterName
+          }
+          console.info('[App.vue] Custom system prompt loaded from:', systemPromptPath)
+        }
+      }
+      else {
+        console.warn('[App.vue] Failed to load system prompt from:', systemPromptPath, response.statusText)
+      }
+    }
+    catch (error) {
+      console.error('[App.vue] Error loading system prompt:', error)
+    }
+  }
+
+  // Onboarding is disabled for OBS streaming usage
+  // onboardingStore.initializeSetupCheck()
   channelServerStore.initialize()
 
   await displayModelsStore.loadDisplayModelsFromIndexedDB()
@@ -74,15 +162,6 @@ onMounted(async () => {
 onUnmounted(() => {
   channelServerStore.dispose()
 })
-
-// Handle first-time setup events
-function handleSetupConfigured() {
-  onboardingStore.markSetupCompleted()
-}
-
-function handleSetupSkipped() {
-  onboardingStore.markSetupSkipped()
-}
 </script>
 
 <template>
@@ -107,11 +186,14 @@ function handleSetupSkipped() {
   </ToasterRoot>
 
   <!-- First Time Setup Dialog -->
+  <!-- Commented out for OBS streaming usage - onboarding not needed -->
+  <!--
   <OnboardingDialog
     v-model="shouldShowSetup"
     @configured="handleSetupConfigured"
     @skipped="handleSetupSkipped"
   />
+  -->
 
   <!-- License Notice -->
   <LicenseNotice />
