@@ -102,6 +102,9 @@ web-ext.config.ts
 .postgres
 twitter-session.json
 
+# Knowledge DB exports
+exports/
+
 # Symlinks created by nix build
 result*
 

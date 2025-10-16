@@ -1,5 +1,5 @@
 .PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube stop \
-        db-setup db-start db-stop db-status db-sync-discord collect-discord collect-discord-stop collect-discord-restart
+        db-setup db-start db-stop db-status db-export db-sync-discord collect-discord collect-discord-stop collect-discord-restart
 
 # デフォルトターゲット: ヘルプを表示
 help:
@@ -21,6 +21,7 @@ help:
 	@echo "  make db-start              - Start knowledge-db service (DB + API server)"
 	@echo "  make db-stop               - Stop knowledge-db service"
 	@echo "  make db-status             - Check knowledge-db status"
+	@echo "  make db-export             - Export database to JSON file"
 	@echo "  make db-sync-discord       - Sync Discord messages (stop → collect → restart)"
 	@echo "  make collect-discord       - Start Discord message collector"
 	@echo "  make collect-discord-stop  - Stop Discord message collector"
@@ -130,6 +131,12 @@ db-status:
 	@echo ""
 	@echo "🌐 API Server:"
 	@curl -s http://localhost:3100/health 2>/dev/null | jq . || echo "  ❌ Not running (port 3100)"
+
+# データベースをJSONファイルにエクスポート
+db-export:
+	@echo "📤 Exporting knowledge database to JSON..."
+	@pnpm -F @proj-airi/knowledge-db export:db
+	@echo "✅ Export complete!"
 
 # Discord同期（DB停止 → メッセージ収集 → DB起動）
 db-sync-discord:

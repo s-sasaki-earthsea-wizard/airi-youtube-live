@@ -25,6 +25,7 @@
     "collect:discord": "dotenvx run -f .env -f .env.local --overload --ignore=MISSING_ENV_FILE -- tsx src/collectors/discord.ts",
     "sync": "dotenvx run -f .env -f .env.local --overload --ignore=MISSING_ENV_FILE -- tsx scripts/sync-data.ts",
     "test:similarity": "dotenvx run -f .env -f .env.local --overload --ignore=MISSING_ENV_FILE -- tsx scripts/test-similarity-threshold.ts",
+    "export:db": "dotenvx run -f .env -f .env.local --overload --ignore=MISSING_ENV_FILE -- tsx scripts/export-db.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
