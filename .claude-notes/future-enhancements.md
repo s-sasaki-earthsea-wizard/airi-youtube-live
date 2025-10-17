@@ -750,6 +750,224 @@ make stream
 - ✅ 確実性（配信前に最新データを確認）
 - ✅ トラブル回避（更新エラーを配信前に検知）
 
+## アイドルトークのコンテキスト継続機能
+
+### 概要
+
+アイドルトーク機能において、前回の話題と関連性の高いトピックを継続して選択する機能。同じテーマについて徐々に深掘りすることで、より自然で一貫性のある独り言を実現する。
+
+### 実装状況
+
+#### ✅ Phase 1: Idle Talk専用コンテキスト継続（実装完了）
+
+**実装内容:**
+- 前回のトピック内容を保持（`lastTopic`）
+- Knowledge DBの意味検索で関連トピックを取得
+- 継続回数のカウンター管理（`contextContinuationCount`）
+- 最大継続回数に達したら自動的にランダム選択へ切り替え
+- ユーザー発言時にコンテキストをクリア
+
+**環境変数:**
+```bash
+# コンテキスト継続を有効化
+VITE_IDLE_TALK_CONTINUE_CONTEXT=true
+# 最大5回まで同じテーマを継続
+VITE_IDLE_TALK_MAX_CONTINUATION=5
+```
+
+**動作例:**
+```
+1回目: "Rustについて..." (ランダム選択) [count=0]
+2回目: "Rustのlifetime..." (類似度75%、関連) [count=1]
+3回目: "所有権システム..." (類似度68%、関連) [count=2]
+4回目: "borrow checker..." (類似度82%、関連) [count=3]
+5回目: "メモリ安全性..." (類似度71%、関連) [count=4]
+6回目: "宝塚について..." (ランダム選択、リセット) [count=0]
+```
+
+**メリット:**
+- 自然な会話の流れ: 同じテーマを深掘りすることで人間らしい独り言に
+- トピックドリフトの防止: 最大継続回数により話題が無限に逸れない
+- 多様性の確保: 定期的にランダム選択に戻ることで新しい話題も導入
+- 配信での効果: 視聴者が「今このテーマについて話してるんだな」と理解しやすい
+
+**修正ファイル:**
+- `apps/stage-web/src/composables/idle-talk.ts`: コア実装
+- `apps/stage-web/src/App.vue`: 環境変数の読み込み
+- `apps/stage-web/.env`: 環境変数の設定
+- `apps/stage-web/.env.example`: 環境変数のテンプレート
+
+---
+
+#### 📋 Phase 2: ユーザー応答へのコンテキスト適用（計画中）
+
+**目的:**
+- ユーザーからの質問に対しても、最近の会話コンテキストを考慮
+- 「さっきの話だけど...」という自然な会話の継続
+
+**技術的アプローチ:**
+
+```typescript
+interface ConversationContext {
+  recentTopics: TopicEmbedding[]
+  lastInteraction: Date
+  conversationId: string
+
+  // コンテキストの有効性チェック
+  isContextValid(): boolean {
+    const elapsed = Date.now() - this.lastInteraction.getTime()
+    return elapsed < 5 * 60 * 1000 // 5分以内
+  }
+
+  // コンテキストを考慮した検索
+  async searchWithContext(query: string, contextWeight: number) {
+    if (contextWeight > 0 && this.recentTopics.length > 0) {
+      // クエリと最近のトピックを組み合わせて検索
+      const blendedEmbedding = await this.blendEmbeddings(
+        query,
+        this.recentTopics,
+        contextWeight
+      )
+      return await knowledgeDB.search(blendedEmbedding)
+    }
+    return await knowledgeDB.search(query)
+  }
+}
+```
+
+**コンテキストの重み付け:**
+```typescript
+enum ContextLevel {
+  NONE = 0,        // コンテキストなし
+  WEAK = 0.3,      // 弱いコンテキスト（参考程度）
+  MEDIUM = 0.5,    // 中程度のコンテキスト
+  STRONG = 0.8,    // 強いコンテキスト（明確に継続）
+}
+
+// Idle Talk: 中程度のコンテキスト
+idleTalkContextLevel: ContextLevel.MEDIUM
+
+// User Query: ユーザーの意図に応じて動的に調整
+userQueryContextLevel: detectTopicChange(message)
+  ? ContextLevel.WEAK    // 話題変更なら弱く
+  : ContextLevel.STRONG  // 継続なら強く
+```
+
+**話題変更の検出:**
+```typescript
+async function detectTopicChange(
+  userMessage: string,
+  recentTopics: string[]
+): Promise<boolean> {
+  // ユーザーメッセージと最近のトピックの意味的類似度を計算
+  const similarities = await Promise.all(
+    recentTopics.map(topic =>
+      calculateSimilarity(userMessage, topic)
+    )
+  )
+
+  const maxSimilarity = Math.max(...similarities)
+
+  // 類似度が低い（< 0.4）なら話題変更と判定
+  return maxSimilarity < 0.4
+}
+```
+
+**課題と対策:**
+
+| 課題 | 対策 |
+|------|------|
+| トピックドリフト | 時間ベースのコンテキスト有効期限（5分） |
+| ユーザーの意図無視 | 明示的な話題変更キーワードの検出 |
+| 新規視聴者の混乱 | コンテキストの透明性（ログで確認可能） |
+| マルチユーザー競合 | ユーザーIDベースのコンテキスト管理（将来） |
+
+**実装優先度:**
+- **Priority**: Medium
+- **Effort**: Medium (2-3日)
+- **Impact**: High（会話の自然性が大幅に向上）
+- **Status**: Phase 1完了後に着手検討
+
+---
+
+#### 🔮 Phase 3: 高度なコンテキスト管理（将来構想）
+
+**1. 話題グラフの構築**
+```typescript
+interface TopicGraph {
+  nodes: Map<string, TopicNode>
+  edges: Map<string, TopicEdge[]>
+
+  // トピック間の関連性をグラフ構造で管理
+  addTopic(topic: string, embedding: number[]): void
+  findRelatedTopics(topicId: string, depth: number): TopicNode[]
+  getTopicPath(startId: string, endId: string): TopicNode[]
+}
+```
+
+**用途:**
+- 話題の遷移パターンの可視化
+- 「あの話題に戻る」機能
+- 話題の深さレベルの管理
+
+**2. マルチスレッド会話**
+```typescript
+interface ConversationThread {
+  id: string
+  rootTopic: string
+  messages: Message[]
+  lastActive: Date
+  participants: string[]
+
+  // 複数の話題を並行して管理
+  isActive(): boolean
+  merge(other: ConversationThread): void
+}
+```
+
+**用途:**
+- 複数のユーザーが異なる話題を同時に投げた場合
+- Aさんの質問に答えつつ、Bさんの話題も記憶
+- 配信チャットでの複数の会話スレッド管理
+
+**3. ユーザーごとのコンテキスト管理**
+```typescript
+interface UserContext {
+  userId: string
+  preferredTopics: string[]
+  conversationHistory: Message[]
+  lastInteraction: Date
+
+  // ユーザー固有のコンテキストを保持
+  getPersonalizedResponse(query: string): Promise<string>
+}
+```
+
+**用途:**
+- 常連視聴者の好みを記憶
+- 「以前も聞いてくれたよね」という継続性
+- パーソナライズされた応答
+
+**実装優先度:**
+- **Priority**: Low
+- **Effort**: Large (2-4週間)
+- **Impact**: Very High（配信規模が大きくなった場合に効果大）
+- **Status**: 将来構想、Phase 2完了後に評価
+
+---
+
+### 検証項目（Phase 1）
+
+実装完了後、以下を確認：
+
+- [ ] コンテキスト継続が有効な場合、関連トピックが選択される
+- [ ] 最大継続回数に達したらランダム選択に切り替わる
+- [ ] ユーザーが発言したらコンテキストがクリアされる
+- [ ] `VITE_IDLE_TALK_CONTINUE_CONTEXT=false`で従来通りの動作になる
+- [ ] ログで継続回数とトピック選択理由が確認できる
+
+---
+
 ## LLMモデルのランダム選択機能
 
 ### 背景と目的

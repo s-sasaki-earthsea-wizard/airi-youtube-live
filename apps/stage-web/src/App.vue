@@ -178,6 +178,8 @@ onMounted(async () => {
   const idleTalkTimeout = Number(import.meta.env.VITE_IDLE_TIMEOUT || 60000)
   const idleTalkMode = import.meta.env.VITE_IDLE_TALK_MODE || 'random'
   const idleTalkMinSimilarity = Number(import.meta.env.VITE_IDLE_TALK_MIN_SIMILARITY || 0.0)
+  const idleTalkContinueContext = import.meta.env.VITE_IDLE_TALK_CONTINUE_CONTEXT === 'true'
+  const idleTalkMaxContinuation = Number(import.meta.env.VITE_IDLE_TALK_MAX_CONTINUATION || 5)
 
   if (idleTalkEnabled) {
     console.info('[App.vue] Initializing idle talk feature')
@@ -187,6 +189,8 @@ onMounted(async () => {
       timeout: idleTalkTimeout,
       mode: idleTalkMode as 'random' | 'sequential',
       minSimilarity: idleTalkMinSimilarity,
+      continueContext: idleTalkContinueContext,
+      maxContextContinuation: idleTalkMaxContinuation,
     })
 
     idleTalk.initialize()

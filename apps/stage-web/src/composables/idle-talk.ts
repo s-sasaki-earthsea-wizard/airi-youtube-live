@@ -25,6 +25,8 @@ export interface IdleTalkConfig {
   timeout: number // milliseconds
   mode: 'random' | 'sequential'
   minSimilarity: number // 0-1
+  continueContext: boolean // whether to continue previous topic
+  maxContextContinuation: number // maximum number of times to continue the same topic
 }
 
 /**
@@ -42,12 +44,23 @@ export function useIdleTalk(config: IdleTalkConfig) {
   const isEnabled = ref(config.enabled)
   const lastInteractionTime = ref(Date.now())
   const idleTimerId = ref<number | null>(null)
+  const lastTopic = ref<string | null>(null) // Store last topic content for context continuation
+  const contextContinuationCount = ref(0) // Track how many times we've continued the same topic
 
   /**
    * Reset idle timer whenever user interacts
+   * Also clears the last topic context when user sends a message
    */
-  function resetIdleTimer() {
+  function resetIdleTimer(clearContext = true) {
     lastInteractionTime.value = Date.now()
+
+    // Clear last topic context when user interacts
+    // This ensures idle talk starts fresh after user activity
+    if (clearContext) {
+      lastTopic.value = null
+      contextContinuationCount.value = 0
+      console.info('[IdleTalk] Context cleared due to user interaction')
+    }
 
     if (idleTimerId.value) {
       clearTimeout(idleTimerId.value)
@@ -88,6 +101,9 @@ export function useIdleTalk(config: IdleTalkConfig) {
         console.warn('[IdleTalk] No topics available in knowledge database')
         return
       }
+
+      // Store the topic for next iteration (context continuation)
+      lastTopic.value = randomTopic.content
 
       // Build user message for LLM (will be removed from chat history after)
       const userPrompt = buildIdleTalkPrompt(randomTopic)
@@ -145,12 +161,15 @@ export function useIdleTalk(config: IdleTalkConfig) {
     finally {
       isCurrentlyIdleTalking.value = false
       // Restart idle timer for next iteration
-      resetIdleTimer()
+      // Don't clear context here - we want to continue the topic
+      resetIdleTimer(false)
     }
   }
 
   /**
    * Get random topic from knowledge database
+   * If context continuation is enabled and there's a previous topic,
+   * use semantic search to find related topics (up to maxContextContinuation times)
    */
   async function getRandomTopic() {
     if (!knowledgeDB.config.enabled) {
@@ -159,6 +178,47 @@ export function useIdleTalk(config: IdleTalkConfig) {
     }
 
     try {
+      // Check if we should continue from previous topic
+      // Continue only if: 1) context continuation is enabled, 2) there's a previous topic,
+      // 3) we haven't exceeded the max continuation count
+      if (config.continueContext
+        && lastTopic.value
+        && contextContinuationCount.value < config.maxContextContinuation) {
+        console.info('[IdleTalk] Attempting to continue from previous topic')
+        console.info(`[IdleTalk] Continuation count: ${contextContinuationCount.value + 1}/${config.maxContextContinuation}`)
+        console.info(`[IdleTalk] Previous topic: ${lastTopic.value.substring(0, 50)}...`)
+
+        // Use semantic search to find related topics
+        const relatedResults = await knowledgeDB.queryKnowledge(lastTopic.value, {
+          limit: 5,
+          threshold: 0.5, // Lower threshold to find related topics
+        })
+
+        if (relatedResults && relatedResults.results.length > 0) {
+          // Pick a random related topic
+          const randomIndex = Math.floor(Math.random() * relatedResults.results.length)
+          const selectedTopic = relatedResults.results[randomIndex]
+
+          console.info(`[IdleTalk] Found related topic (similarity: ${(selectedTopic.similarity * 100).toFixed(1)}%)`)
+          console.info(`[IdleTalk] Selected topic from ${selectedTopic.author}: ${selectedTopic.content.substring(0, 50)}...`)
+
+          // Increment continuation counter
+          contextContinuationCount.value++
+
+          return selectedTopic
+        }
+
+        console.info('[IdleTalk] No related topics found, falling back to random selection')
+      }
+
+      // Reset context when max continuation is reached or no previous topic
+      if (contextContinuationCount.value >= config.maxContextContinuation) {
+        console.info('[IdleTalk] Max context continuation reached, resetting to random selection')
+        lastTopic.value = null
+        contextContinuationCount.value = 0
+      }
+
+      // Fallback to random topic selection
       // Get 5 random topics and pick one randomly (for diversity)
       const topics = await knowledgeDB.getRandomTopic({ limit: 5 })
 
@@ -170,7 +230,10 @@ export function useIdleTalk(config: IdleTalkConfig) {
       const randomIndex = Math.floor(Math.random() * topics.length)
       const selectedTopic = topics[randomIndex]
 
-      console.info(`[IdleTalk] Selected topic from ${selectedTopic.author}: ${selectedTopic.content.substring(0, 50)}...`)
+      console.info(`[IdleTalk] Selected random topic from ${selectedTopic.author}: ${selectedTopic.content.substring(0, 50)}...`)
+
+      // Reset continuation counter for new topic chain
+      contextContinuationCount.value = 0
 
       return selectedTopic
     }
@@ -205,6 +268,10 @@ export function useIdleTalk(config: IdleTalkConfig) {
     console.info('[IdleTalk] Initializing idle talk feature')
     console.info(`[IdleTalk] Timeout: ${config.timeout}ms (${config.timeout / 1000}s)`)
     console.info(`[IdleTalk] Mode: ${config.mode}`)
+    console.info(`[IdleTalk] Context continuation: ${config.continueContext ? 'enabled' : 'disabled'}`)
+    if (config.continueContext) {
+      console.info(`[IdleTalk] Max context continuation: ${config.maxContextContinuation} times`)
+    }
 
     // Start initial timer
     startIdleTimer()
