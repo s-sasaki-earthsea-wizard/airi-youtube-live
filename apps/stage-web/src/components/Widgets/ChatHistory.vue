@@ -97,8 +97,10 @@ onTokenLiteral(async () => {
             h="unset <sm:fit" min-w-20 rounded-lg px-2 py-1
             class="bg-cyan-50/80 <md:bg-cyan-500/25 dark:bg-cyan-900/80"
           >
-            <div>
-              <span text-xs text="cyan-400/90 dark:cyan-600/90" font-normal class="inline <sm:hidden">{{ t('stage.chat.message.character-name.you') }}</span>
+            <div v-if="message.author">
+              <span text-xs text="cyan-400/90 dark:cyan-600/90" font-normal class="inline <sm:hidden">
+                {{ message.author }}
+              </span>
             </div>
             <MarkdownRenderer
               v-if="message.content"
