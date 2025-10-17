@@ -73,6 +73,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 - [2025-10-10: YouTube Live Chat Integration](./.claude-notes/sessions/2025-10-10-youtube-integration.md) - YouTube Live配信機能の統合
 - [2025-10-16: TTS Voice Configuration Fix](./.claude-notes/sessions/2025-10-16-tts-voice-fix.md) - 環境変数からのTTS設定読み込みバグ修正
+- [2025-10-17: YouTube Streaming Mode UI](./.claude-notes/sessions/2025-10-17-streaming-mode-ui.md) - YouTube配信向けUIカスタマイズ機能の実装
 
 ## 将来の拡張計画
 
@@ -115,5 +116,5 @@ Claude Codeを使ってこのプロジェクトに貢献する場合：
 
 ---
 
-**最終更新**: 2025-10-16
+**最終更新**: 2025-10-17
 **Claude Code バージョン**: Sonnet 4.5 (claude-sonnet-4-5-20250929)

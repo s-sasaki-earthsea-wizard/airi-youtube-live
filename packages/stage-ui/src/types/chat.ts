@@ -26,4 +26,13 @@ export interface ChatAssistantMessage extends AssistantMessage {
   }[]
 }
 
-export type ChatMessage = ChatAssistantMessage | SystemMessage | ToolMessage | UserMessage
+/**
+ * Extended user message with optional author information
+ * Used for displaying YouTube usernames or other external user identifiers
+ */
+export interface ChatUserMessage extends UserMessage {
+  author?: string
+  source?: string
+}
+
+export type ChatMessage = ChatAssistantMessage | SystemMessage | ToolMessage | ChatUserMessage

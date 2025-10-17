@@ -43,13 +43,12 @@ export function useWebSocketClient() {
     console.info('[WebSocket] Received input:text event:', { text, author, source })
 
     try {
-      // Add user message to chat store
-      // Include author if available
-      const content = author ? `${author}: ${text}` : text
-
+      // Add user message to chat store with author information
       chatStore.messages.push({
         role: 'user',
-        content,
+        content: text,
+        author,
+        source,
       })
 
       // Automatically generate AI response if enabled

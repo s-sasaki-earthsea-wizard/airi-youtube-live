@@ -14,9 +14,11 @@ import MobileHeader from '../components/Layouts/MobileHeader.vue'
 import MobileInteractiveArea from '../components/Layouts/MobileInteractiveArea.vue'
 import AnimatedWave from '../components/Widgets/AnimatedWave.vue'
 
+import { useStreamingMode } from '../composables/streaming-mode'
 import { themeColorFromPropertyOf, useThemeColor } from '../composables/theme-color'
 import { useKnowledgeDBIntegration } from '../composables/useKnowledgeDBIntegration'
 
+const streamingMode = useStreamingMode()
 const dark = useDark()
 const paused = ref(false)
 
@@ -94,12 +96,14 @@ onMounted(() => {
     >
       <div relative flex="~ col" z-2 h-100dvh w-100vw of-hidden>
         <!-- header -->
-        <div class="px-0 py-1 md:px-3 md:py-3" w-full gap-2>
+        <div v-if="streamingMode.showHeader" class="px-0 py-1 md:px-3 md:py-3" w-full gap-2>
           <Header class="hidden md:flex" />
           <MobileHeader class="flex md:hidden" />
         </div>
         <!-- page -->
-        <div relative flex="~ 1 row gap-y-0 gap-x-2 <md:col">
+        <div
+          relative flex="~ 1 row gap-y-0 gap-x-2 <md:col"
+        >
           <WidgetStage
             flex-1 min-w="1/2"
             :paused="paused"
@@ -111,7 +115,11 @@ onMounted(() => {
             :y-offset="positionInPercentageString.y"
             :scale="scale"
           />
-          <InteractiveArea v-if="!isMobile" h="85dvh" absolute right-4 flex flex-1 flex-col max-w="500px" min-w="30%" />
+          <InteractiveArea
+            v-if="!isMobile"
+            :class="streamingMode.showHeader ? 'h-85dvh' : 'h-95dvh'"
+            absolute right-4 flex flex-1 flex-col max-w="500px" min-w="30%"
+          />
           <MobileInteractiveArea v-if="isMobile" @settings-open="handleSettingsOpen" />
         </div>
       </div>
