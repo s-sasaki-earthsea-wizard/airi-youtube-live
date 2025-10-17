@@ -129,6 +129,38 @@ The endpoint automatically:
 2. Performs cosine similarity search against stored vectors
 3. Returns results sorted by similarity score
 
+#### Random Posts (for Idle Talk Feature)
+
+Get random posts without similarity search:
+
+```bash
+GET http://localhost:3100/knowledge/random?limit=5
+```
+
+**Parameters:**
+- `limit` (optional, default: 5): Maximum number of random posts to return
+- `source` (optional): Filter by source (e.g., 'discord', 'twitter')
+
+**Response:**
+```json
+{
+  "posts": [
+    {
+      "id": "uuid",
+      "source": "discord",
+      "author": "megssk",
+      "content": "なんかの認証をするときに汚い背景に書かれてる文字を読んだり...",
+      "url": "https://discord.com/channels/...",
+      "posted_at": 1234567890
+    }
+  ],
+  "total": 5
+}
+```
+
+**Use Case:**
+This endpoint is designed for the idle talk feature in stage-web, where the AI character spontaneously talks about random topics from the knowledge database when there is no user input.
+
 ### Data Collection
 
 #### Collect from Discord
@@ -193,6 +225,9 @@ make collect-discord-stop
 # Restart Discord collector
 make collect-discord-restart
 
+# Restart knowledge-db API server (without restarting DB)
+make db-restart
+
 # Export database to JSON
 make db-export
 
@@ -252,6 +287,28 @@ VITE_KNOWLEDGE_DB_THRESHOLD=0.3
 **Files**:
 - `apps/stage-web/src/composables/useKnowledgeDB.ts` - Knowledge DB composable
 - `apps/stage-web/src/App.vue` - Hook registration in `onMounted()`
+
+**Idle Talk Feature**:
+stage-web also includes an idle talk feature that automatically starts conversations when there is no user input for a specified time. It uses the `/knowledge/random` endpoint to select random topics from the knowledge database.
+
+**Configuration** (`.env`):
+```env
+VITE_IDLE_TALK_ENABLED=true
+VITE_IDLE_TIMEOUT=60000  # 60 seconds
+VITE_IDLE_TALK_MODE=random
+```
+
+**Integration Flow**:
+1. Timer monitors user inactivity
+2. After timeout, `useKnowledgeDB.getRandomTopic()` fetches 5 random posts
+3. One topic is randomly selected
+4. LLM generates a response based on the topic
+5. TTS converts response to speech and plays audio
+6. Timer resets for next iteration
+
+**Files**:
+- `apps/stage-web/src/composables/idle-talk.ts` - Idle talk feature implementation
+- `apps/stage-web/src/composables/useKnowledgeDB.ts` - `getRandomTopic()` method
 
 ### youtube-bot (Not Yet Integrated)
 

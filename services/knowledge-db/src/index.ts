@@ -117,9 +117,43 @@ app.get('/knowledge', async (req, res) => {
   }
 })
 
+// Get random posts endpoint (for idle talk feature)
+app.get('/knowledge/random', async (req, res) => {
+  try {
+    const { limit = 5, source: _source } = req.query
+
+    // Build query with optional source filter
+    const query = db
+      .select({
+        id: postsTable.id,
+        source: postsTable.source,
+        author: postsTable.author,
+        content: postsTable.content,
+        url: postsTable.url,
+        posted_at: postsTable.posted_at,
+      })
+      .from(postsTable)
+      .where(sql`${postsTable.content_vector_1536} IS NOT NULL`)
+      .orderBy(sql`RANDOM()`)
+      .limit(Number(limit))
+
+    const posts = await query
+
+    res.json({
+      posts,
+      total: posts.length,
+    })
+  }
+  catch (error) {
+    console.error('Error fetching random posts:', error)
+    res.status(500).json({ error: 'Failed to fetch random posts' })
+  }
+})
+
 app.listen(PORT, HOST, () => {
   console.info(`[knowledge-db] Server running at http://${HOST}:${PORT}`)
   console.info('[knowledge-db] Health check: http://localhost:3100/health')
   console.info('[knowledge-db] Posts endpoint: http://localhost:3100/posts')
   console.info('[knowledge-db] Knowledge query: http://localhost:3100/knowledge?query=xxx')
+  console.info('[knowledge-db] Random posts: http://localhost:3100/knowledge/random?limit=5')
 })

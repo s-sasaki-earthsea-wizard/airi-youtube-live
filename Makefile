@@ -1,5 +1,5 @@
 .PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube stop \
-        db-setup db-start db-stop db-status db-export db-sync-discord collect-discord collect-discord-stop collect-discord-restart
+        db-setup db-start db-stop db-restart db-status db-export db-sync-discord collect-discord collect-discord-stop collect-discord-restart
 
 # デフォルトターゲット: ヘルプを表示
 help:
@@ -20,6 +20,7 @@ help:
 	@echo "  make db-setup              - Initial setup (install deps + start DB + apply schema)"
 	@echo "  make db-start              - Start knowledge-db service (DB + API server)"
 	@echo "  make db-stop               - Stop knowledge-db service"
+	@echo "  make db-restart            - Restart knowledge-db service (stop → start)"
 	@echo "  make db-status             - Check knowledge-db status"
 	@echo "  make db-export             - Export database to JSON file"
 	@echo "  make db-sync-discord       - Sync Discord messages (stop → collect → restart)"
@@ -121,6 +122,23 @@ db-stop:
 	@pkill -f "knowledge-db.*tsx" || true
 	@cd services/knowledge-db && docker-compose down
 	@echo "✅ Knowledge DB stopped"
+
+# knowledge-db サービス再起動
+db-restart:
+	@echo "🔄 Restarting knowledge-db service..."
+	@echo "🛑 Stopping API server..."
+	@pkill -f "knowledge-db.*tsx" || true
+	@sleep 1
+	@echo "🌐 Starting API server (port 3100)..."
+	@cd services/knowledge-db && pnpm start > /dev/null 2>&1 &
+	@sleep 2
+	@echo "✅ Knowledge DB API server restarted"
+	@echo ""
+	@echo "Endpoints:"
+	@echo "  - Health: http://localhost:3100/health"
+	@echo "  - Posts:  http://localhost:3100/posts"
+	@echo "  - Query:  http://localhost:3100/knowledge?query=xxx"
+	@echo "  - Random: http://localhost:3100/knowledge/random?limit=5"
 
 # knowledge-db ステータス確認
 db-status:

@@ -17,6 +17,7 @@ import { toast, Toaster } from 'vue-sonner'
 
 import LicenseNotice from './components/LicenseNotice.vue'
 
+import { useIdleTalk } from './composables/idle-talk'
 import { useKnowledgeDB } from './composables/useKnowledgeDB'
 import { useKnowledgeDBIntegration } from './composables/useKnowledgeDBIntegration'
 import { usePWAStore } from './stores/pwa'
@@ -170,6 +171,25 @@ onMounted(async () => {
     // Initialize the shared integration state
     // Stage.vue will use this state to inject knowledge
     knowledgeDBIntegration.initialize(baseSystemPrompt, knowledgeDB)
+  }
+
+  // Initialize idle talk feature if enabled
+  const idleTalkEnabled = import.meta.env.VITE_IDLE_TALK_ENABLED === 'true'
+  const idleTalkTimeout = Number(import.meta.env.VITE_IDLE_TIMEOUT || 60000)
+  const idleTalkMode = import.meta.env.VITE_IDLE_TALK_MODE || 'random'
+  const idleTalkMinSimilarity = Number(import.meta.env.VITE_IDLE_TALK_MIN_SIMILARITY || 0.0)
+
+  if (idleTalkEnabled) {
+    console.info('[App.vue] Initializing idle talk feature')
+
+    const idleTalk = useIdleTalk({
+      enabled: idleTalkEnabled,
+      timeout: idleTalkTimeout,
+      mode: idleTalkMode as 'random' | 'sequential',
+      minSimilarity: idleTalkMinSimilarity,
+    })
+
+    idleTalk.initialize()
   }
 
   // Onboarding is disabled for OBS streaming usage
