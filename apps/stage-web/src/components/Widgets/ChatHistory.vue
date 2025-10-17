@@ -5,7 +5,10 @@ import { storeToRefs } from 'pinia'
 import { nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { useStreamingMode } from '../../composables/streaming-mode'
+
 const chatHistoryRef = ref<HTMLDivElement>()
+const streamingMode = useStreamingMode()
 
 const { t } = useI18n()
 const { messages, sending, streamingMessage } = storeToRefs(useChatStore())
@@ -60,7 +63,7 @@ onTokenLiteral(async () => {
             />
           </div>
         </div>
-        <div v-if="message.role === 'assistant'" flex mr="12">
+        <div v-if="message.role === 'assistant' && streamingMode.showLLMResponses" flex mr="12">
           <div
             flex="~ col" shadow="sm primary-200/50 dark:none" min-w-20
             rounded-lg px-2 py-1 h="unset <sm:fit"
@@ -107,7 +110,7 @@ onTokenLiteral(async () => {
           </div>
         </div>
       </div>
-      <div v-if="sending" flex mr="12">
+      <div v-if="sending && streamingMode.showLLMResponses" flex mr="12">
         <div
           flex="~ col" shadow="sm primary-200/50 dark:none" min-w-20
           rounded-lg px-2 py-1 h="unset <sm:fit"
