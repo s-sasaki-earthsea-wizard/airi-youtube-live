@@ -54,6 +54,13 @@ onMounted(() => {
       // Skip Knowledge DB query during idle talk
       if (isCurrentlyIdleTalking.value) {
         console.info('[index.vue] Skipping Knowledge DB query (idle talk in progress)')
+        // Reset to base prompt to avoid contamination from previous context
+        const { baseSystemPrompt } = integrationState
+        const defaultCard = airiCardStore.getCard('default')
+        if (defaultCard) {
+          defaultCard.description = baseSystemPrompt
+          console.info('[index.vue] Reset to base system prompt for idle talk')
+        }
         return
       }
 

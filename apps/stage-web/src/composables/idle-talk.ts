@@ -65,12 +65,17 @@ export function useIdleTalk(config: IdleTalkConfig) {
     }
 
     if (idleTimerId.value) {
+      console.info(`[IdleTalk] Clearing existing timer #${idleTimerId.value}`)
       clearTimeout(idleTimerId.value)
       idleTimerId.value = null
     }
 
     if (isEnabled.value && !isCurrentlyIdleTalking.value) {
+      console.info('[IdleTalk] Conditions met for starting new timer')
       startIdleTimer()
+    }
+    else {
+      console.info(`[IdleTalk] Not starting timer: isEnabled=${isEnabled.value}, isCurrentlyIdleTalking=${isCurrentlyIdleTalking.value}`)
     }
   }
 
@@ -78,16 +83,22 @@ export function useIdleTalk(config: IdleTalkConfig) {
    * Start idle timer
    */
   function startIdleTimer() {
-    idleTimerId.value = setTimeout(async () => {
+    const timerId = setTimeout(async () => {
       await handleIdleTimeout()
     }, config.timeout) as unknown as number
+
+    idleTimerId.value = timerId
+    console.info(`[IdleTalk] Started timer #${timerId}, will trigger in ${config.timeout}ms`)
   }
 
   /**
    * Handle idle timeout - trigger automatic conversation
    */
   async function handleIdleTimeout() {
+    console.info(`[IdleTalk] Timer fired. isEnabled=${isEnabled.value}, isCurrentlyIdleTalking=${isCurrentlyIdleTalking.value}`)
+
     if (!isEnabled.value || isCurrentlyIdleTalking.value) {
+      console.warn(`[IdleTalk] Skipping idle timeout: isEnabled=${isEnabled.value}, isCurrentlyIdleTalking=${isCurrentlyIdleTalking.value}`)
       return
     }
 
@@ -95,6 +106,7 @@ export function useIdleTalk(config: IdleTalkConfig) {
 
     try {
       isCurrentlyIdleTalking.value = true
+      console.info('[IdleTalk] Set isCurrentlyIdleTalking = true')
 
       // Build prompt based on context continuation state
       const userPrompt = await buildIdleTalkPrompt()
@@ -108,8 +120,19 @@ export function useIdleTalk(config: IdleTalkConfig) {
       const llmProvider = consciousnessStore.activeProvider
       const llmModel = consciousnessStore.activeModel
 
+      console.info('[IdleTalk] Checking LLM provider:', {
+        llmProvider,
+        llmModel,
+        hasProvider: !!llmProvider,
+        hasModel: !!llmModel,
+      })
+
       if (!llmProvider || !llmModel) {
         console.warn('[IdleTalk] No LLM provider configured')
+        console.warn('[IdleTalk] consciousnessStore state:', {
+          activeProvider: consciousnessStore.activeProvider,
+          activeModel: consciousnessStore.activeModel,
+        })
         return
       }
 
@@ -122,8 +145,13 @@ export function useIdleTalk(config: IdleTalkConfig) {
       }
 
       console.info('[IdleTalk] Sending idle talk prompt to LLM')
+      console.info('[IdleTalk] Prompt content:', userPrompt)
 
       try {
+        // Record the current chat history length before sending
+        const initialHistoryLength = chatStore.messages.length
+        console.info(`[IdleTalk] Initial chat history length: ${initialHistoryLength}`)
+
         // Send the topic as a user message
         // This will trigger all the necessary pipelines (TTS, etc.)
         // Knowledge DB integration will check isCurrentlyIdleTalking and skip the query
@@ -132,6 +160,38 @@ export function useIdleTalk(config: IdleTalkConfig) {
           chatProvider: providerInstance as ChatProvider,
           providerConfig,
         })
+
+        // Wait for the assistant's response to be added to chat history
+        // Poll the chat history until we see both the user prompt and assistant response
+        const maxWaitTime = 30000 // 30 seconds max wait
+        const pollInterval = 100 // Check every 100ms
+        const startTime = Date.now()
+        let assistantResponseFound = false
+
+        while (!assistantResponseFound && Date.now() - startTime < maxWaitTime) {
+          // Check if we have new messages (should have +2: user prompt + assistant response)
+          if (chatStore.messages.length > initialHistoryLength) {
+            // Look for the assistant's response after our prompt
+            const newMessages = chatStore.messages.slice(initialHistoryLength)
+            const hasAssistantResponse = newMessages.some(msg => msg.role === 'assistant')
+
+            if (hasAssistantResponse) {
+              assistantResponseFound = true
+              console.info(`[IdleTalk] Assistant response detected after ${Date.now() - startTime}ms`)
+              break
+            }
+          }
+
+          // Wait before next poll
+          await new Promise(resolve => setTimeout(resolve, pollInterval))
+        }
+
+        if (!assistantResponseFound) {
+          console.warn(`[IdleTalk] Timeout waiting for assistant response after ${maxWaitTime}ms`)
+        }
+
+        console.info(`[IdleTalk] Chat history length: ${chatStore.messages.length}`)
+        console.info(`[IdleTalk] Last 3 messages:`, chatStore.messages.slice(-3).map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content.substring(0, 50) : 'non-string' })))
 
         // Remove the prompt message from chat history first
         // Keep only the assistant's response to make it look spontaneous
@@ -156,6 +216,7 @@ export function useIdleTalk(config: IdleTalkConfig) {
         }
         else {
           console.warn('[IdleTalk] No assistant response found in chat history')
+          console.warn('[IdleTalk] All messages:', chatStore.messages.map(m => ({ role: m.role, hasContent: !!m.content })))
         }
 
         console.info('[IdleTalk] LLM response generated successfully')
@@ -170,7 +231,9 @@ export function useIdleTalk(config: IdleTalkConfig) {
       console.error('[IdleTalk] Error during idle talk:', error)
     }
     finally {
+      console.info('[IdleTalk] Setting isCurrentlyIdleTalking = false')
       isCurrentlyIdleTalking.value = false
+      console.info('[IdleTalk] Restarting idle timer for next iteration')
       // Restart idle timer for next iteration
       // Don't clear context here - we want to continue the topic
       resetIdleTimer(false)

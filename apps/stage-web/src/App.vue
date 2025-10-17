@@ -87,6 +87,7 @@ onMounted(async () => {
   const ttsVoiceId = import.meta.env.VITE_TTS_VOICE_ID
 
   // Configure LLM provider if environment variables are set
+  console.info('[App.vue] LLM config:', { llmProvider, hasApiKey: !!llmApiKey, llmModel })
   if (llmProvider && llmApiKey) {
     providersStore.providers[llmProvider] = {
       ...providersStore.providers[llmProvider],
@@ -95,6 +96,23 @@ onMounted(async () => {
     }
     consciousnessStore.activeProvider = llmProvider
     consciousnessStore.activeModel = llmModel
+
+    // Wait a bit for Pinia persistence to sync
+    await new Promise(resolve => setTimeout(resolve, 100))
+
+    console.info('[App.vue] LLM provider configured:', {
+      activeProvider: consciousnessStore.activeProvider,
+      activeModel: consciousnessStore.activeModel,
+    })
+
+    // Force set again to ensure it's persisted
+    if (!consciousnessStore.activeModel) {
+      console.warn('[App.vue] activeModel was cleared, setting again')
+      consciousnessStore.activeModel = llmModel
+    }
+  }
+  else {
+    console.warn('[App.vue] LLM provider NOT configured - missing environment variables')
   }
 
   // Configure TTS provider if environment variables are set
