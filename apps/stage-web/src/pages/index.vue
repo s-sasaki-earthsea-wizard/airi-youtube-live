@@ -103,7 +103,6 @@ onMounted(() => {
         <!-- page -->
         <div
           relative flex="~ 1 row gap-y-0 gap-x-2 <md:col"
-          :class="{ 'pt-3': !streamingMode.showHeader }"
         >
           <WidgetStage
             flex-1 min-w="1/2"
