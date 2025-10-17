@@ -1,15 +1,31 @@
 <script setup lang="ts">
-// License notice component for attribution
+import { useDark } from '@vueuse/core'
+
+const isDark = useDark()
 </script>
 
 <template>
   <div class="license-notice">
-    <p class="powered-by">
-      Powered by AIRI
-    </p>
-    <p class="github-url">
-      https://github.com/moeru-ai/airi
-    </p>
+    <img
+      v-if="isDark"
+      src="/src/assets/logo-dark.svg"
+      alt="AIRI Logo"
+      class="logo"
+    >
+    <img
+      v-else
+      src="/src/assets/logo.svg"
+      alt="AIRI Logo"
+      class="logo"
+    >
+    <div class="text-content">
+      <p class="powered-by">
+        Powered by AIRI
+      </p>
+      <p class="github-url">
+        https://github.com/moeru-ai/airi
+      </p>
+    </div>
   </div>
 </template>
 
@@ -18,17 +34,33 @@
   position: fixed;
   bottom: 10px;
   left: 10px;
-  background: rgba(0, 0, 0, 0.75);
-  color: rgba(255, 255, 255, 0.9);
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 16px;
+  background: rgba(59, 130, 246, 0.25);
+  color: rgba(255, 255, 255, 0.95);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 18px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   z-index: 9999;
   line-height: 1.5;
-  backdrop-filter: blur(4px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
   pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5),
+               0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.logo {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+
+.text-content {
+  display: flex;
+  flex-direction: column;
 }
 
 .powered-by {
@@ -38,7 +70,7 @@
 
 .github-url {
   margin: 0;
-  color: #58a6ff;
+  color: rgba(251, 253, 255, 0.9);
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 15px;
 }
@@ -49,7 +81,13 @@
     font-size: 10px;
     padding: 6px 10px;
     bottom: 8px;
-    right: 8px;
+    left: 8px;
+    gap: 8px;
+  }
+
+  .logo {
+    width: 20px;
+    height: 20px;
   }
 
   .github-url {
