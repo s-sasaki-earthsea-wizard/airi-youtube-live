@@ -4,6 +4,129 @@
 
 ## 近期的な機能
 
+### リアルタイム通知の実装（ポーリング最適化）
+
+現在のポーリング方式を改善し、APIクォータ使用量を削減しつつ遅延を最小化します。
+
+#### 背景
+- **現状**: 10秒ごとに固定ポーリング
+- **問題点**:
+  - APIクォータを常時消費（10,000 units/日）
+  - コメントがない時も無駄なリクエスト
+  - 2-10秒の遅延が発生
+
+#### YouTube API の制約
+- ❌ ライブチャット用のWebhook/Push通知は**提供されていない**
+- ❌ PubSubHubbub: 動画アップロード/メタデータ変更のみ対応（ライブチャットは非対応）
+- ❌ Server-Sent Events (SSE): 公式APIでは明確な実装方法が不明
+
+#### 推奨アプローチ: 適応的ポーリング
+
+コメント頻度に応じて動的にポーリング間隔を調整：
+
+```typescript
+// services/youtube-bot/src/youtube/adaptive-poller.ts
+
+class AdaptivePoller {
+  private baseInterval = 10000  // 10秒（デフォルト）
+  private minInterval = 2000    // 2秒（高頻度時）
+  private maxInterval = 30000   // 30秒（非活動時）
+
+  private currentInterval = this.baseInterval
+  private messageHistory: number[] = []
+
+  calculateNextInterval() {
+    // 過去1分間のメッセージ数をカウント
+    const recentMessages = this.messageHistory
+      .filter(time => Date.now() - time < 60000)
+      .length
+
+    if (recentMessages > 20) {
+      // 非常に活発: 2秒
+      return this.minInterval
+    } else if (recentMessages > 5) {
+      // 中程度の活動: 5秒
+      return 5000
+    } else if (recentMessages > 0) {
+      // 低活動: 10秒
+      return this.baseInterval
+    } else {
+      // 非活動: 30秒
+      return this.maxInterval
+    }
+  }
+
+  async poll() {
+    const messages = await this.fetchMessages()
+
+    // メッセージタイムスタンプを記録
+    messages.forEach(msg => {
+      this.messageHistory.push(msg.timestamp)
+    })
+
+    // 次回のポーリング間隔を計算
+    this.currentInterval = this.calculateNextInterval()
+
+    // 古い履歴を削除（メモリ節約）
+    this.messageHistory = this.messageHistory
+      .filter(time => Date.now() - time < 300000) // 5分
+  }
+}
+```
+
+#### メリット
+- ✅ **APIクォータ削減**: 最大70%削減（非活動時30秒間隔）
+- ✅ **遅延最小化**: 活発時は2秒間隔に短縮
+- ✅ **公式API使用**: 安定性が高い
+- ✅ **実装が容易**: 既存コードの小規模な改善
+
+#### デメリット
+- ❌ 依然として2-30秒の遅延（リアルタイムではない）
+- ❌ APIクォータを消費（削減はされるが完全にゼロではない）
+
+#### 代替アプローチ: pytchat（将来的な選択肢）
+
+非公式のInnerTube APIを使用してリアルタイム通知を実現：
+
+```
+┌─────────────────┐
+│  YouTube Live   │
+└────────┬────────┘
+         │ InnerTube API (WebSocket)
+         ▼
+┌─────────────────┐
+│  pytchat-bridge │  ← 新しいPythonサービス
+│    (Python)     │
+└────────┬────────┘
+         │ WebSocket/HTTP
+         ▼
+┌─────────────────┐
+│  AIRI Server    │
+└─────────────────┘
+```
+
+**メリット**:
+- ✅ **真のリアルタイム**（数百ミリ秒の遅延）
+- ✅ **APIクォータ不使用**
+- ✅ **asyncio対応**、JSON出力対応
+
+**デメリット**:
+- ❌ **非公式APIに依存**（将来動作しなくなる可能性）
+- ❌ **Pythonサービスの追加**が必要
+- ❌ **メンテナンスリスク**
+
+#### 実装優先度
+1. **短期（推奨）**: 適応的ポーリングの実装（数時間で実装可能）
+2. **中期（検討）**: pytchat-bridgeの評価とプロトタイプ
+3. **長期**: YouTube公式のWebhook/SSE対応を待つ（可能性は低い）
+
+#### 参考リソース
+- [pytchat - PyPI](https://pypi.org/project/pytchat/)
+- [YouTube Data API - PubSubHubbub](https://developers.google.com/youtube/v3/guides/push_notifications)
+- [YouTube Live Chat API](https://developers.google.com/youtube/v3/live/docs/liveChatMessages)
+
+---
+
 ### チャットメッセージ投稿（オプション機能）
 - YouTube Live Chatに直接返信を投稿
 - 追加のAPIクォータが必要
