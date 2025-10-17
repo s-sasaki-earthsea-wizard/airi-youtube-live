@@ -750,6 +750,171 @@ make stream
 - ✅ 確実性（配信前に最新データを確認）
 - ✅ トラブル回避（更新エラーを配信前に検知）
 
+## LLMモデルのランダム選択機能
+
+### 背景と目的
+
+配信中の応答に多様性を持たせるため、複数のLLMモデルからリクエストごとにランダム選択する機能。
+
+**目的:**
+- 応答の多様性を確保（同じ質問でも異なる言い回し）
+- 配信の暗転を避けつつモデルを切り替え
+- 各モデルの特性を活かした自然なバリエーション
+
+### 技術的アプローチ
+
+#### 実装方針: リクエストごとのランダム選択
+
+```typescript
+// utils/llm-model-selector.ts（新規作成）
+
+/**
+ * Select a random LLM model from comma-separated list in VITE_LLM_MODEL
+ *
+ * @example
+ * // .env:
+ * // VITE_LLM_MODEL=anthropic/claude-4.5-sonnet,anthropic/claude-3.5-sonnet,google/gemini-2.0-flash-exp
+ *
+ * const model = selectRandomModel()
+ * // Returns: "anthropic/claude-3.5-sonnet" (random)
+ */
+export function selectRandomModel(): string {
+  const modelEnv = import.meta.env.VITE_LLM_MODEL || ''
+  const models = modelEnv.split(',').map(m => m.trim()).filter(m => m.length > 0)
+
+  if (models.length === 0) {
+    console.warn('[LLM] No models configured in VITE_LLM_MODEL')
+    return ''
+  }
+
+  if (models.length === 1) {
+    return models[0]
+  }
+
+  const selectedModel = models[Math.floor(Math.random() * models.length)]
+  console.info(`[LLM] Selected model: ${selectedModel} from ${models.length} options`)
+  return selectedModel
+}
+```
+
+### 環境変数の設定
+
+```bash
+# apps/stage-web/.env
+
+# カンマ区切りで複数のモデルを指定
+VITE_LLM_MODEL=anthropic/claude-4.5-sonnet,anthropic/claude-3.5-sonnet,google/gemini-2.0-flash-exp
+
+# または単一モデル（後方互換性）
+VITE_LLM_MODEL=anthropic/claude-4.5-sonnet
+```
+
+### 修正対象ファイル
+
+1. **apps/stage-web/src/utils/llm-model-selector.ts** (新規作成)
+   - `selectRandomModel()` 関数の実装
+
+2. **apps/stage-web/src/composables/websocket-client.ts:60**
+   ```typescript
+   // 変更前:
+   const llmModel = import.meta.env.VITE_LLM_MODEL
+
+   // 変更後:
+   const llmModel = selectRandomModel()
+   ```
+
+3. **apps/stage-web/src/composables/idle-talk.ts** (該当箇所)
+   - アイドルトークでもランダムモデル選択を適用
+
+4. **apps/stage-web/src/App.vue:81** (初期設定)
+   ```typescript
+   // 初回マウント時は最初のモデルを使用（または同様にランダム選択）
+   const modelList = import.meta.env.VITE_LLM_MODEL.split(',')
+   const llmModel = modelList[0]?.trim() || ''
+   ```
+
+### メリット
+
+1. **リロード不要**: 配信中断なしで常にモデルを切り替え
+2. **多様性**: 各応答で異なるモデルを使用可能
+3. **柔軟性**: 環境変数だけで簡単に設定変更
+4. **後方互換性**: 単一モデル指定でも動作
+5. **キャラクター性維持**: 同じsystem promptを使用するため一貫性は保たれる
+
+### デメリットと対応
+
+| デメリット | 対応 |
+|----------|------|
+| 会話の一貫性がやや低下 | 各モデルは同じsystem promptを受け取るためキャラクター性は維持される |
+| モデルごとに応答速度が異なる | 遅いモデルは除外するか、タイムアウト設定を調整 |
+| コスト変動 | 安価なモデルを中心に構成、高コストモデルは最小限に |
+
+### 将来的な拡張案（オプション）
+
+#### 1. 重み付けランダム選択
+
+特定のモデルを優先しつつランダム性を持たせる：
+
+```bash
+# 構文例: model:weight
+VITE_LLM_MODEL=anthropic/claude-4.5-sonnet:3,anthropic/claude-3.5-sonnet:2,google/gemini-2.0-flash-exp:1
+```
+
+```typescript
+export function selectWeightedRandomModel(): string {
+  const modelEnv = import.meta.env.VITE_LLM_MODEL || ''
+  const entries = modelEnv.split(',').map(entry => {
+    const [model, weight] = entry.split(':')
+    return { model: model.trim(), weight: Number(weight?.trim() || 1) }
+  })
+
+  const totalWeight = entries.reduce((sum, e) => sum + e.weight, 0)
+  let random = Math.random() * totalWeight
+
+  for (const entry of entries) {
+    random -= entry.weight
+    if (random <= 0) return entry.model
+  }
+
+  return entries[0].model
+}
+```
+
+#### 2. 選択戦略の設定
+
+```bash
+VITE_LLM_MODEL_SELECTION_STRATEGY=random  # random | sequential | weighted
+```
+
+- `random`: 完全ランダム（推奨）
+- `sequential`: 順番に使用（テスト・デバッグ用）
+- `weighted`: 重み付けランダム
+
+#### 3. モデル統計の記録
+
+```typescript
+// どのモデルが何回使われたか、応答時間の平均などを記録
+export interface ModelStats {
+  model: string
+  usageCount: number
+  avgResponseTime: number
+  errorCount: number
+}
+```
+
+### 実装優先度
+
+- **Priority**: Low-Medium
+- **Effort**: Small (1-2時間)
+- **Impact**: Medium (配信の多様性向上)
+- **Status**: 設計完了、実装待ち
+
+### 関連Issue/PR
+
+- 実装時に作成
+
+---
+
 ## 参考資料
 
 - [PostgreSQL pgvector](https://github.com/pgvector/pgvector)
@@ -758,8 +923,235 @@ make stream
 - [LangChain](https://python.langchain.com/docs/use_cases/question_answering/)
 - [LlamaIndex](https://docs.llamaindex.ai/)
 
+## 設定ファイルの一元管理システム
+
+### 背景と課題
+
+現在、設定ファイルが複数のサービスに分散しており、管理が煩雑になっています：
+
+```
+現状の設定ファイル配置:
+├── apps/stage-web/.env                          # stage-web環境変数
+├── apps/stage-web/public/prompts/
+│   └── system-prompt.md                         # システムプロンプト
+├── services/knowledge-db/.env                   # knowledge-db環境変数
+└── services/youtube-bot/.env                    # youtube-bot環境変数
+```
+
+**問題点:**
+- 設定が分散しているため、全体を把握しづらい
+- 各サービスごとに個別に設定ファイルを編集する必要がある
+- 設定の同期漏れや不整合が発生しやすい
+- 新しい開発者のオンボーディングが困難
+
+### 提案：設定の一元管理とシンク機構
+
+```
+提案する構成:
+airi-youtube-live/
+├── config/                                      # 設定の一元管理ディレクトリ
+│   ├── README.md                                # 設定管理ガイド
+│   ├── prompts/
+│   │   └── system-prompt.md                     # マスターのシステムプロンプト
+│   ├── env/
+│   │   ├── stage-web.env                        # stage-web用環境変数テンプレート
+│   │   ├── knowledge-db.env                     # knowledge-db用環境変数テンプレート
+│   │   └── youtube-bot.env                      # youtube-bot用環境変数テンプレート
+│   ├── sync-config.sh                           # 設定同期スクリプト
+│   └── validate-config.sh                       # 設定バリデーションスクリプト
+└── ...
+```
+
+### sync-config.sh の設計
+
+#### 主な機能
+
+1. **設定の同期**
+   - `config/` ディレクトリから各サービスへ設定をコピー
+   - プロンプトファイルも自動配置
+
+2. **バックアップ**
+   - 既存の設定ファイルを `.backup/` に保存
+   - タイムスタンプ付きでバックアップ管理
+
+3. **差分表示**
+   - 変更内容を視覚的に表示
+   - 意図しない変更を事前に確認
+
+4. **バリデーション**
+   - 必須環境変数のチェック
+   - ファイルパスの存在確認
+   - フォーマットの妥当性検証
+
+#### 使用例
+
+```bash
+# 設定の同期（ドライラン）
+./config/sync-config.sh --dry-run
+
+# 設定の同期（実行）
+./config/sync-config.sh
+
+# 差分のみ表示
+./config/sync-config.sh --diff
+
+# バックアップから復元
+./config/sync-config.sh --restore
+```
+
+#### スクリプト実装の概要
+
+```bash
+#!/bin/bash
+# config/sync-config.sh
+
+set -euo pipefail
+
+CONFIG_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$CONFIG_DIR/.." && pwd)"
+BACKUP_DIR="$PROJECT_ROOT/.config-backups/$(date +%Y%m%d-%H%M%S)"
+
+# 同期マッピング定義
+declare -A SYNC_MAP=(
+    ["$CONFIG_DIR/env/stage-web.env"]="$PROJECT_ROOT/apps/stage-web/.env"
+    ["$CONFIG_DIR/env/knowledge-db.env"]="$PROJECT_ROOT/services/knowledge-db/.env"
+    ["$CONFIG_DIR/env/youtube-bot.env"]="$PROJECT_ROOT/services/youtube-bot/.env"
+    ["$CONFIG_DIR/prompts/system-prompt.md"]="$PROJECT_ROOT/apps/stage-web/public/prompts/system-prompt.md"
+)
+
+# バックアップ作成
+create_backup() {
+    echo "📦 Creating backup in $BACKUP_DIR"
+    mkdir -p "$BACKUP_DIR"
+
+    for src in "${!SYNC_MAP[@]}"; do
+        dest="${SYNC_MAP[$src]}"
+        if [[ -f "$dest" ]]; then
+            cp "$dest" "$BACKUP_DIR/$(basename "$dest")"
+        fi
+    done
+}
+
+# 差分表示
+show_diff() {
+    for src in "${!SYNC_MAP[@]}"; do
+        dest="${SYNC_MAP[$src]}"
+        if [[ -f "$dest" ]]; then
+            echo "📄 Changes in $(basename "$dest"):"
+            diff -u "$dest" "$src" || true
+            echo ""
+        fi
+    done
+}
+
+# 同期実行
+sync_configs() {
+    for src in "${!SYNC_MAP[@]}"; do
+        dest="${SYNC_MAP[$src]}"
+        echo "📋 Syncing $(basename "$src") → $dest"
+
+        # ディレクトリ作成
+        mkdir -p "$(dirname "$dest")"
+
+        # ファイルコピー
+        cp "$src" "$dest"
+    done
+
+    echo "✅ Configuration sync completed"
+}
+
+# バリデーション
+validate_configs() {
+    echo "🔍 Validating configurations..."
+
+    # 必須環境変数チェック
+    for env_file in "$CONFIG_DIR/env"/*.env; do
+        echo "Checking $(basename "$env_file")..."
+        # ここに具体的なバリデーションロジック
+    done
+
+    echo "✅ Validation passed"
+}
+
+# メイン処理
+case "${1:-}" in
+    --dry-run)
+        show_diff
+        ;;
+    --diff)
+        show_diff
+        ;;
+    --restore)
+        # 最新のバックアップから復元
+        latest_backup=$(ls -td $PROJECT_ROOT/.config-backups/* | head -1)
+        echo "🔄 Restoring from $latest_backup"
+        # 復元ロジック
+        ;;
+    --validate)
+        validate_configs
+        ;;
+    *)
+        create_backup
+        validate_configs
+        sync_configs
+        ;;
+esac
+```
+
+### Makefile統合
+
+```makefile
+# プロジェクトルートのMakefile
+
+.PHONY: config-sync config-diff config-validate config-restore
+
+# 設定の同期
+config-sync:
+	@./config/sync-config.sh
+
+# 差分確認
+config-diff:
+	@./config/sync-config.sh --diff
+
+# バリデーション
+config-validate:
+	@./config/sync-config.sh --validate
+
+# バックアップから復元
+config-restore:
+	@./config/sync-config.sh --restore
+```
+
+### メリット
+
+1. **一元管理**: すべての設定を `config/` で管理
+2. **安全性**: バックアップ機能で誤操作を防止
+3. **可視性**: 差分表示で変更内容を確認
+4. **バリデーション**: 設定ミスを事前に検出
+5. **再現性**: 設定を簡単に複製・共有可能
+6. **ドキュメント化**: `config/README.md` で設定ガイドを提供
+
+### デメリットと対策
+
+| デメリット | 対策 |
+|----------|------|
+| 設定の二重管理 | スクリプト実行を習慣化、pre-commit hookで自動チェック |
+| 同期忘れ | CI/CDで自動バリデーション、Makefileで簡単実行 |
+| 秘密情報の扱い | `.env.example`をテンプレート化、実際の値は`.env`のみ |
+
+### 実装優先度
+
+- **Priority**: Medium
+- **Effort**: Small (2-4時間)
+- **Impact**: Medium (開発効率向上)
+- **Status**: 設計完了、実装待ち
+
+### 関連Issue/PR
+
+- 実装時に作成
+
 ---
 
-**最終更新**: 2025-10-15
-**ステータス**: 実装計画確定（既存インフラ活用で大幅簡素化）
-**実装見積もり**: 約500行、1-2週間
+**最終更新**: 2025-10-17
+**ステータス**: 設計完了
+**実装見積もり**: 2-4時間
