@@ -16,7 +16,7 @@ import type { ChatProvider } from '@xsai-ext/shared-providers'
 import { useChatStore } from '@proj-airi/stage-ui/stores/chat'
 import { useConsciousnessStore } from '@proj-airi/stage-ui/stores/modules/consciousness'
 import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 
 import { useKnowledgeDB } from './useKnowledgeDB'
 
@@ -152,6 +152,26 @@ export function useIdleTalk(config: IdleTalkConfig) {
         const initialHistoryLength = chatStore.messages.length
         console.info(`[IdleTalk] Initial chat history length: ${initialHistoryLength}`)
 
+        // Set up a one-time hook to remove the prompt message immediately after it's composed
+        let hookRemoved = false
+        const removePromptHook = async () => {
+          if (hookRemoved)
+            return
+
+          // Find and remove the user message we just added
+          await nextTick()
+          const userMessageIndex = chatStore.messages.findLastIndex(msg => msg.role === 'user')
+          if (userMessageIndex !== -1 && userMessageIndex >= initialHistoryLength) {
+            chatStore.messages.splice(userMessageIndex, 1)
+            console.info(`[IdleTalk] Removed idle talk prompt immediately at index ${userMessageIndex}`)
+          }
+
+          hookRemoved = true
+        }
+
+        // Register the hook before sending
+        chatStore.onAfterMessageComposed(removePromptHook)
+
         // Send the topic as a user message
         // This will trigger all the necessary pipelines (TTS, etc.)
         // Knowledge DB integration will check isCurrentlyIdleTalking and skip the query
@@ -162,16 +182,18 @@ export function useIdleTalk(config: IdleTalkConfig) {
         })
 
         // Wait for the assistant's response to be added to chat history
-        // Poll the chat history until we see both the user prompt and assistant response
+        // Poll the chat history until we see the assistant response
+        // Note: We don't look for user message anymore since it was already removed by the hook
         const maxWaitTime = 30000 // 30 seconds max wait
         const pollInterval = 100 // Check every 100ms
         const startTime = Date.now()
         let assistantResponseFound = false
 
         while (!assistantResponseFound && Date.now() - startTime < maxWaitTime) {
-          // Check if we have new messages (should have +2: user prompt + assistant response)
+          // Check if we have new assistant message
+          // Since we removed the user message immediately, we only expect +1 (assistant)
           if (chatStore.messages.length > initialHistoryLength) {
-            // Look for the assistant's response after our prompt
+            // Look for the assistant's response
             const newMessages = chatStore.messages.slice(initialHistoryLength)
             const hasAssistantResponse = newMessages.some(msg => msg.role === 'assistant')
 
@@ -193,18 +215,7 @@ export function useIdleTalk(config: IdleTalkConfig) {
         console.info(`[IdleTalk] Chat history length: ${chatStore.messages.length}`)
         console.info(`[IdleTalk] Last 3 messages:`, chatStore.messages.slice(-3).map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content.substring(0, 50) : 'non-string' })))
 
-        // Remove the prompt message from chat history first
-        // Keep only the assistant's response to make it look spontaneous
-        const promptIndex = chatStore.messages.findIndex(msg =>
-          msg.role === 'user' && typeof msg.content === 'string' && msg.content === userPrompt,
-        )
-        if (promptIndex !== -1) {
-          chatStore.messages.splice(promptIndex, 1)
-          console.info('[IdleTalk] Removed prompt from chat history')
-        }
-
         // Store the assistant's response for next iteration
-        // Find the last assistant message (after prompt removal)
         const assistantMessages = chatStore.messages.filter(
           msg => msg.role === 'assistant' && typeof msg.content === 'string',
         )
