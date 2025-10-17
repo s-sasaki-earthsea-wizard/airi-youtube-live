@@ -18,11 +18,14 @@ import { useI18n } from 'vue-i18n'
 
 import ChatHistory from '../Widgets/ChatHistory.vue'
 
+import { useStreamingMode } from '../../composables/streaming-mode'
+
 const messageInput = ref('')
 const listening = ref(false)
 const showMicrophoneSelect = ref(false)
 const isComposing = ref(false)
 
+const streamingMode = useStreamingMode()
 const providersStore = useProvidersStore()
 const { activeProvider, activeModel } = storeToRefs(useConsciousnessStore())
 const { themeColorsHueDynamic } = storeToRefs(useSettings())
@@ -148,7 +151,7 @@ onAfterMessageComposed(async () => {
         bg="primary-50/50 dark:primary-950/70" backdrop-blur-md
       >
         <ChatHistory h-full flex-1 w="full" max-h="<md:[60%]" />
-        <div h="<md:full" flex gap-2>
+        <div v-if="streamingMode.showTextInput" h="<md:full" flex gap-2>
           <BasicTextarea
             v-model="messageInput"
             :placeholder="t('stage.message')"

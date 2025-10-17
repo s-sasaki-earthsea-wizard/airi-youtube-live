@@ -21,6 +21,12 @@ export interface StreamingModeConfig {
    * User messages will always be visible
    */
   showLLMResponses: boolean
+
+  /**
+   * Show/hide text input area
+   * During streaming, messages come from YouTube chat so local input is unnecessary
+   */
+  showTextInput: boolean
 }
 
 /**
@@ -31,7 +37,7 @@ export function useStreamingMode(): StreamingModeConfig {
 
   return {
     isStreamingMode: streamingMode,
-    // When streaming mode is enabled, default to hiding header and LLM responses
+    // When streaming mode is enabled, default to hiding header, LLM responses, and text input
     // But allow individual overrides via specific env vars
     showHeader: streamingMode
       ? import.meta.env.VITE_SHOW_HEADER === 'true'
@@ -39,5 +45,8 @@ export function useStreamingMode(): StreamingModeConfig {
     showLLMResponses: streamingMode
       ? import.meta.env.VITE_SHOW_LLM_RESPONSES === 'true'
       : import.meta.env.VITE_SHOW_LLM_RESPONSES !== 'false',
+    showTextInput: streamingMode
+      ? import.meta.env.VITE_SHOW_TEXT_INPUT === 'true'
+      : import.meta.env.VITE_SHOW_TEXT_INPUT !== 'false',
   }
 }
