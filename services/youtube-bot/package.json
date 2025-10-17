@@ -15,26 +15,17 @@
   },
   "scripts": {
     "start": "dotenvx run -f .env -f .env.local --overload --ignore=MISSING_ENV_FILE -- tsx src/index.ts",
-    "auth": "dotenvx run -f .env -f .env.local --overload --ignore=MISSING_ENV_FILE -- tsx src/youtube/auth.ts",
-    "test-message": "dotenvx run -f .env -f .env.local --overload --ignore=MISSING_ENV_FILE -- tsx src/test-message.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@dotenvx/dotenvx": "^1.51.0",
     "@guiiai/logg": "catalog:",
     "@proj-airi/server-sdk": "workspace:*",
-    "@xsai-ext/providers-cloud": "catalog:",
-    "@xsai/generate-speech": "catalog:",
-    "@xsai/generate-text": "catalog:",
-    "@xsai/utils-chat": "catalog:",
     "dotenv": "^17.2.3",
-    "express": "^4.21.2",
-    "google-auth-library": "^9.0.0",
     "googleapis": "^140.0.0",
     "tsx": "^4.20.6"
   },
   "devDependencies": {
-    "@types/express": "^5.0.0",
     "@types/node": "^24.7.0"
   }
 }

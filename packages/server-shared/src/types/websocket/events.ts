@@ -10,9 +10,19 @@ export interface Discord {
   channelId?: string
 }
 
+export interface YouTube {
+  messageType?: 'text' | 'super_chat' | 'super_sticker' | 'membership'
+  superChatDetails?: {
+    amountMicros: string
+    currency: string
+    tier: number
+  }
+}
+
 interface InputSource {
   browser: string
   discord: Discord
+  youtube: YouTube
 }
 
 export interface WebSocketBaseEvent<T, D> {
@@ -52,13 +62,16 @@ export interface WebSocketEvents<C = undefined> {
   }
   'input:text': {
     text: string
-  } & Partial<WithInputSource<'browser' | 'discord'>>
+    author?: string
+    source?: string
+    timestamp?: string
+  } & Partial<WithInputSource<'browser' | 'discord' | 'youtube'>>
   'input:text:voice': {
     transcription: string
-  } & Partial<WithInputSource<'browser' | 'discord'>>
+  } & Partial<WithInputSource<'browser' | 'discord' | 'youtube'>>
   'input:voice': {
     audio: ArrayBuffer
-  } & Partial<WithInputSource<'browser' | 'discord'>>
+  } & Partial<WithInputSource<'browser' | 'discord' | 'youtube'>>
 }
 
 export type WebSocketEvent<C = undefined> = {
