@@ -52,6 +52,8 @@ export function useKnowledgeDB() {
    *
    * @param query - Search query text
    * @param options - Optional query parameters
+   * @param options.limit - Maximum number of results to return
+   * @param options.threshold - Minimum similarity score (0-1)
    * @returns Promise with knowledge results
    */
   async function queryKnowledge(
@@ -108,6 +110,61 @@ export function useKnowledgeDB() {
   }
 
   /**
+   * Get random topics from knowledge database (for idle talk feature)
+   *
+   * @param options - Optional parameters (limit, source)
+   * @param options.limit - Maximum number of random posts to return
+   * @param options.source - Filter by source (e.g., 'discord', 'twitter')
+   * @returns Promise with random posts (without similarity scores)
+   */
+  async function getRandomTopic(
+    options?: { limit?: number, source?: string },
+  ): Promise<Omit<KnowledgeResult, 'similarity'>[] | null> {
+    // Skip if knowledge DB is disabled
+    if (!config.enabled) {
+      console.info('[useKnowledgeDB] Knowledge DB is disabled')
+      return null
+    }
+
+    isLoading.value = true
+    error.value = null
+
+    try {
+      const limit = options?.limit ?? 5
+
+      const url = new URL('/knowledge/random', config.url)
+      url.searchParams.set('limit', limit.toString())
+
+      if (options?.source) {
+        url.searchParams.set('source', options.source)
+      }
+
+      console.info(`[useKnowledgeDB] Fetching ${limit} random topics`)
+
+      const response = await fetch(url.toString())
+
+      if (!response.ok) {
+        throw new Error(`Knowledge DB random query failed: ${response.status} ${response.statusText}`)
+      }
+
+      const data = await response.json()
+
+      console.info(`[useKnowledgeDB] Retrieved ${data.total} random topics`)
+
+      return data.posts
+    }
+    catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      console.error('[useKnowledgeDB] Random query failed:', errorMessage)
+      error.value = err instanceof Error ? err : new Error(errorMessage)
+      return null
+    }
+    finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
    * Format knowledge results for injection into system prompt
    *
    * @param results - Knowledge search results
@@ -133,6 +190,7 @@ export function useKnowledgeDB() {
     isLoading,
     error,
     queryKnowledge,
+    getRandomTopic,
     formatKnowledgeForPrompt,
   }
 }

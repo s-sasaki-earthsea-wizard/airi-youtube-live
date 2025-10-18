@@ -750,6 +750,416 @@ make stream
 - ✅ 確実性（配信前に最新データを確認）
 - ✅ トラブル回避（更新エラーを配信前に検知）
 
+## アイドルトークのコンテキスト継続機能
+
+### 概要
+
+アイドルトーク機能において、前回の話題と関連性の高いトピックを継続して選択する機能。同じテーマについて徐々に深掘りすることで、より自然で一貫性のある独り言を実現する。
+
+### 実装状況
+
+#### ✅ Phase 1: Idle Talk専用コンテキスト継続（実装完了）
+
+**実装方針の変更（2025-10-18）:**
+
+当初は「Knowledge DBから関連トピックを検索」する実装でしたが、以下の問題が発生：
+- **Similarity 100%問題**: 自分自身を検索してしまい、同じトピックを繰り返す
+- **真の会話継続ができない**: DBのトピックは独立しており、会話の流れが途切れる
+
+**修正後の実装:**
+- 前回のAI応答を保持（`lastResponse`）
+- 前回の応答を元にLLMが自然に話を続ける
+- Knowledge DBは補強材料として使用（関連する過去の発言を検索）
+- 継続回数のカウンター管理（`contextContinuationCount`）
+- 最大継続回数に達したら自動的にランダム選択へ切り替え
+- ユーザー発言時にコンテキストをクリア
+
+**環境変数:**
+```bash
+# コンテキスト継続を有効化
+VITE_IDLE_TALK_CONTINUE_CONTEXT=true
+# 最大5回まで同じテーマを継続
+VITE_IDLE_TALK_MAX_CONTINUATION=5
+```
+
+**動作例:**
+```
+1回目: "博士課程の修了について悩んでいて..." (ランダムトピック) [count=0]
+2回目: 前回「博士課程の修了について...」→「指導教員との面談で進路の話が...」 [count=1]
+3回目: 前回「指導教員との面談で...」→「ジャズ喫茶で常連客と話して...」 [count=2]
+4回目: 前回「ジャズ喫茶で...」→「学会で企業研究者と出会って...」 [count=3]
+5回目: 前回「学会で企業研究者と...」→「アカデミアと企業の選択肢を考えて...」 [count=4]
+6回目: "宝塚について..." (ランダム選択、リセット) [count=0]
+```
+
+**プロンプト例（継続時）:**
+```typescript
+`前回あなたはこう話しました：
+「博士課程の修了について悩んでいて...」
+
+【あなたの関連する過去の発言】
+- 任期付きポストを転々とする生活は厳しい
+- 研究は好きだけど現実的な問題もある
+
+この話題について、さらに深掘りして200文字程度で話してください。
+自然な会話の流れで、関連する思い出や考えを加えてください。`
+```
+
+**メリット:**
+- **真の会話継続**: LLMが前回の応答を認識して自然に続けられる
+- **Similarity 100%問題の解決**: AI応答はDBに存在しないため、自分自身とマッチしない
+- **適切なRAG使用**: Knowledge DBは補強材料として本来の役割を果たす
+- **トピックドリフトの防止**: 最大継続回数により話題が無限に逸れない
+- **多様性の確保**: 定期的にランダム選択に戻ることで新しい話題も導入
+
+**Known Issues（既知の問題）:**
+- **複数の応答が並列実行される**: ログに複数のLLM出力が同時に表示される現象
+- **TTSチャンクの混在**: 異なる応答のTTSチャンクがインターリーブされる可能性
+- **原因**: タイマーの重複または非同期処理の問題（`isCurrentlyIdleTalking`チェックが機能していない可能性）
+- **影響**: 軽微（コンテキスト継続機能自体は正常に動作）
+- **TODO**: `handleIdleTimeout()`に詳細なログを追加して調査
+
+**修正ファイル:**
+- `apps/stage-web/src/composables/idle-talk.ts`: コア実装
+- `apps/stage-web/src/App.vue`: 環境変数の読み込み
+- `apps/stage-web/.env.example`: 環境変数のテンプレート
+
+---
+
+#### 📋 Phase 2: ユーザー応答へのコンテキスト適用（計画中）
+
+**目的:**
+- ユーザーからの質問に対しても、最近の会話コンテキストを考慮
+- 「さっきの話だけど...」という自然な会話の継続
+
+**技術的アプローチ:**
+
+```typescript
+interface ConversationContext {
+  recentTopics: TopicEmbedding[]
+  lastInteraction: Date
+  conversationId: string
+
+  // コンテキストの有効性チェック
+  isContextValid(): boolean {
+    const elapsed = Date.now() - this.lastInteraction.getTime()
+    return elapsed < 5 * 60 * 1000 // 5分以内
+  }
+
+  // コンテキストを考慮した検索
+  async searchWithContext(query: string, contextWeight: number) {
+    if (contextWeight > 0 && this.recentTopics.length > 0) {
+      // クエリと最近のトピックを組み合わせて検索
+      const blendedEmbedding = await this.blendEmbeddings(
+        query,
+        this.recentTopics,
+        contextWeight
+      )
+      return await knowledgeDB.search(blendedEmbedding)
+    }
+    return await knowledgeDB.search(query)
+  }
+}
+```
+
+**コンテキストの重み付け:**
+```typescript
+enum ContextLevel {
+  NONE = 0,        // コンテキストなし
+  WEAK = 0.3,      // 弱いコンテキスト（参考程度）
+  MEDIUM = 0.5,    // 中程度のコンテキスト
+  STRONG = 0.8,    // 強いコンテキスト（明確に継続）
+}
+
+// Idle Talk: 中程度のコンテキスト
+idleTalkContextLevel: ContextLevel.MEDIUM
+
+// User Query: ユーザーの意図に応じて動的に調整
+userQueryContextLevel: detectTopicChange(message)
+  ? ContextLevel.WEAK    // 話題変更なら弱く
+  : ContextLevel.STRONG  // 継続なら強く
+```
+
+**話題変更の検出:**
+```typescript
+async function detectTopicChange(
+  userMessage: string,
+  recentTopics: string[]
+): Promise<boolean> {
+  // ユーザーメッセージと最近のトピックの意味的類似度を計算
+  const similarities = await Promise.all(
+    recentTopics.map(topic =>
+      calculateSimilarity(userMessage, topic)
+    )
+  )
+
+  const maxSimilarity = Math.max(...similarities)
+
+  // 類似度が低い（< 0.4）なら話題変更と判定
+  return maxSimilarity < 0.4
+}
+```
+
+**課題と対策:**
+
+| 課題 | 対策 |
+|------|------|
+| トピックドリフト | 時間ベースのコンテキスト有効期限（5分） |
+| ユーザーの意図無視 | 明示的な話題変更キーワードの検出 |
+| 新規視聴者の混乱 | コンテキストの透明性（ログで確認可能） |
+| マルチユーザー競合 | ユーザーIDベースのコンテキスト管理（将来） |
+
+**実装優先度:**
+- **Priority**: Medium
+- **Effort**: Medium (2-3日)
+- **Impact**: High（会話の自然性が大幅に向上）
+- **Status**: Phase 1完了後に着手検討
+
+---
+
+#### 🔮 Phase 3: 高度なコンテキスト管理（将来構想）
+
+**1. 話題グラフの構築**
+```typescript
+interface TopicGraph {
+  nodes: Map<string, TopicNode>
+  edges: Map<string, TopicEdge[]>
+
+  // トピック間の関連性をグラフ構造で管理
+  addTopic(topic: string, embedding: number[]): void
+  findRelatedTopics(topicId: string, depth: number): TopicNode[]
+  getTopicPath(startId: string, endId: string): TopicNode[]
+}
+```
+
+**用途:**
+- 話題の遷移パターンの可視化
+- 「あの話題に戻る」機能
+- 話題の深さレベルの管理
+
+**2. マルチスレッド会話**
+```typescript
+interface ConversationThread {
+  id: string
+  rootTopic: string
+  messages: Message[]
+  lastActive: Date
+  participants: string[]
+
+  // 複数の話題を並行して管理
+  isActive(): boolean
+  merge(other: ConversationThread): void
+}
+```
+
+**用途:**
+- 複数のユーザーが異なる話題を同時に投げた場合
+- Aさんの質問に答えつつ、Bさんの話題も記憶
+- 配信チャットでの複数の会話スレッド管理
+
+**3. ユーザーごとのコンテキスト管理**
+```typescript
+interface UserContext {
+  userId: string
+  preferredTopics: string[]
+  conversationHistory: Message[]
+  lastInteraction: Date
+
+  // ユーザー固有のコンテキストを保持
+  getPersonalizedResponse(query: string): Promise<string>
+}
+```
+
+**用途:**
+- 常連視聴者の好みを記憶
+- 「以前も聞いてくれたよね」という継続性
+- パーソナライズされた応答
+
+**実装優先度:**
+- **Priority**: Low
+- **Effort**: Large (2-4週間)
+- **Impact**: Very High（配信規模が大きくなった場合に効果大）
+- **Status**: 将来構想、Phase 2完了後に評価
+
+---
+
+### 検証項目（Phase 1）
+
+実装完了後、以下を確認：
+
+- [ ] コンテキスト継続が有効な場合、関連トピックが選択される
+- [ ] 最大継続回数に達したらランダム選択に切り替わる
+- [ ] ユーザーが発言したらコンテキストがクリアされる
+- [ ] `VITE_IDLE_TALK_CONTINUE_CONTEXT=false`で従来通りの動作になる
+- [ ] ログで継続回数とトピック選択理由が確認できる
+
+---
+
+## LLMモデルのランダム選択機能
+
+### 背景と目的
+
+配信中の応答に多様性を持たせるため、複数のLLMモデルからリクエストごとにランダム選択する機能。
+
+**目的:**
+- 応答の多様性を確保（同じ質問でも異なる言い回し）
+- 配信の暗転を避けつつモデルを切り替え
+- 各モデルの特性を活かした自然なバリエーション
+
+### 技術的アプローチ
+
+#### 実装方針: リクエストごとのランダム選択
+
+```typescript
+// utils/llm-model-selector.ts（新規作成）
+
+/**
+ * Select a random LLM model from comma-separated list in VITE_LLM_MODEL
+ *
+ * @example
+ * // .env:
+ * // VITE_LLM_MODEL=anthropic/claude-4.5-sonnet,anthropic/claude-3.5-sonnet,google/gemini-2.0-flash-exp
+ *
+ * const model = selectRandomModel()
+ * // Returns: "anthropic/claude-3.5-sonnet" (random)
+ */
+export function selectRandomModel(): string {
+  const modelEnv = import.meta.env.VITE_LLM_MODEL || ''
+  const models = modelEnv.split(',').map(m => m.trim()).filter(m => m.length > 0)
+
+  if (models.length === 0) {
+    console.warn('[LLM] No models configured in VITE_LLM_MODEL')
+    return ''
+  }
+
+  if (models.length === 1) {
+    return models[0]
+  }
+
+  const selectedModel = models[Math.floor(Math.random() * models.length)]
+  console.info(`[LLM] Selected model: ${selectedModel} from ${models.length} options`)
+  return selectedModel
+}
+```
+
+### 環境変数の設定
+
+```bash
+# apps/stage-web/.env
+
+# カンマ区切りで複数のモデルを指定
+VITE_LLM_MODEL=anthropic/claude-4.5-sonnet,anthropic/claude-3.5-sonnet,google/gemini-2.0-flash-exp
+
+# または単一モデル（後方互換性）
+VITE_LLM_MODEL=anthropic/claude-4.5-sonnet
+```
+
+### 修正対象ファイル
+
+1. **apps/stage-web/src/utils/llm-model-selector.ts** (新規作成)
+   - `selectRandomModel()` 関数の実装
+
+2. **apps/stage-web/src/composables/websocket-client.ts:60**
+   ```typescript
+   // 変更前:
+   const llmModel = import.meta.env.VITE_LLM_MODEL
+
+   // 変更後:
+   const llmModel = selectRandomModel()
+   ```
+
+3. **apps/stage-web/src/composables/idle-talk.ts** (該当箇所)
+   - アイドルトークでもランダムモデル選択を適用
+
+4. **apps/stage-web/src/App.vue:81** (初期設定)
+   ```typescript
+   // 初回マウント時は最初のモデルを使用（または同様にランダム選択）
+   const modelList = import.meta.env.VITE_LLM_MODEL.split(',')
+   const llmModel = modelList[0]?.trim() || ''
+   ```
+
+### メリット
+
+1. **リロード不要**: 配信中断なしで常にモデルを切り替え
+2. **多様性**: 各応答で異なるモデルを使用可能
+3. **柔軟性**: 環境変数だけで簡単に設定変更
+4. **後方互換性**: 単一モデル指定でも動作
+5. **キャラクター性維持**: 同じsystem promptを使用するため一貫性は保たれる
+
+### デメリットと対応
+
+| デメリット | 対応 |
+|----------|------|
+| 会話の一貫性がやや低下 | 各モデルは同じsystem promptを受け取るためキャラクター性は維持される |
+| モデルごとに応答速度が異なる | 遅いモデルは除外するか、タイムアウト設定を調整 |
+| コスト変動 | 安価なモデルを中心に構成、高コストモデルは最小限に |
+
+### 将来的な拡張案（オプション）
+
+#### 1. 重み付けランダム選択
+
+特定のモデルを優先しつつランダム性を持たせる：
+
+```bash
+# 構文例: model:weight
+VITE_LLM_MODEL=anthropic/claude-4.5-sonnet:3,anthropic/claude-3.5-sonnet:2,google/gemini-2.0-flash-exp:1
+```
+
+```typescript
+export function selectWeightedRandomModel(): string {
+  const modelEnv = import.meta.env.VITE_LLM_MODEL || ''
+  const entries = modelEnv.split(',').map(entry => {
+    const [model, weight] = entry.split(':')
+    return { model: model.trim(), weight: Number(weight?.trim() || 1) }
+  })
+
+  const totalWeight = entries.reduce((sum, e) => sum + e.weight, 0)
+  let random = Math.random() * totalWeight
+
+  for (const entry of entries) {
+    random -= entry.weight
+    if (random <= 0) return entry.model
+  }
+
+  return entries[0].model
+}
+```
+
+#### 2. 選択戦略の設定
+
+```bash
+VITE_LLM_MODEL_SELECTION_STRATEGY=random  # random | sequential | weighted
+```
+
+- `random`: 完全ランダム（推奨）
+- `sequential`: 順番に使用（テスト・デバッグ用）
+- `weighted`: 重み付けランダム
+
+#### 3. モデル統計の記録
+
+```typescript
+// どのモデルが何回使われたか、応答時間の平均などを記録
+export interface ModelStats {
+  model: string
+  usageCount: number
+  avgResponseTime: number
+  errorCount: number
+}
+```
+
+### 実装優先度
+
+- **Priority**: Low-Medium
+- **Effort**: Small (1-2時間)
+- **Impact**: Medium (配信の多様性向上)
+- **Status**: 設計完了、実装待ち
+
+### 関連Issue/PR
+
+- 実装時に作成
+
+---
+
 ## 参考資料
 
 - [PostgreSQL pgvector](https://github.com/pgvector/pgvector)
@@ -758,8 +1168,235 @@ make stream
 - [LangChain](https://python.langchain.com/docs/use_cases/question_answering/)
 - [LlamaIndex](https://docs.llamaindex.ai/)
 
+## 設定ファイルの一元管理システム
+
+### 背景と課題
+
+現在、設定ファイルが複数のサービスに分散しており、管理が煩雑になっています：
+
+```
+現状の設定ファイル配置:
+├── apps/stage-web/.env                          # stage-web環境変数
+├── apps/stage-web/public/prompts/
+│   └── system-prompt.md                         # システムプロンプト
+├── services/knowledge-db/.env                   # knowledge-db環境変数
+└── services/youtube-bot/.env                    # youtube-bot環境変数
+```
+
+**問題点:**
+- 設定が分散しているため、全体を把握しづらい
+- 各サービスごとに個別に設定ファイルを編集する必要がある
+- 設定の同期漏れや不整合が発生しやすい
+- 新しい開発者のオンボーディングが困難
+
+### 提案：設定の一元管理とシンク機構
+
+```
+提案する構成:
+airi-youtube-live/
+├── config/                                      # 設定の一元管理ディレクトリ
+│   ├── README.md                                # 設定管理ガイド
+│   ├── prompts/
+│   │   └── system-prompt.md                     # マスターのシステムプロンプト
+│   ├── env/
+│   │   ├── stage-web.env                        # stage-web用環境変数テンプレート
+│   │   ├── knowledge-db.env                     # knowledge-db用環境変数テンプレート
+│   │   └── youtube-bot.env                      # youtube-bot用環境変数テンプレート
+│   ├── sync-config.sh                           # 設定同期スクリプト
+│   └── validate-config.sh                       # 設定バリデーションスクリプト
+└── ...
+```
+
+### sync-config.sh の設計
+
+#### 主な機能
+
+1. **設定の同期**
+   - `config/` ディレクトリから各サービスへ設定をコピー
+   - プロンプトファイルも自動配置
+
+2. **バックアップ**
+   - 既存の設定ファイルを `.backup/` に保存
+   - タイムスタンプ付きでバックアップ管理
+
+3. **差分表示**
+   - 変更内容を視覚的に表示
+   - 意図しない変更を事前に確認
+
+4. **バリデーション**
+   - 必須環境変数のチェック
+   - ファイルパスの存在確認
+   - フォーマットの妥当性検証
+
+#### 使用例
+
+```bash
+# 設定の同期（ドライラン）
+./config/sync-config.sh --dry-run
+
+# 設定の同期（実行）
+./config/sync-config.sh
+
+# 差分のみ表示
+./config/sync-config.sh --diff
+
+# バックアップから復元
+./config/sync-config.sh --restore
+```
+
+#### スクリプト実装の概要
+
+```bash
+#!/bin/bash
+# config/sync-config.sh
+
+set -euo pipefail
+
+CONFIG_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$CONFIG_DIR/.." && pwd)"
+BACKUP_DIR="$PROJECT_ROOT/.config-backups/$(date +%Y%m%d-%H%M%S)"
+
+# 同期マッピング定義
+declare -A SYNC_MAP=(
+    ["$CONFIG_DIR/env/stage-web.env"]="$PROJECT_ROOT/apps/stage-web/.env"
+    ["$CONFIG_DIR/env/knowledge-db.env"]="$PROJECT_ROOT/services/knowledge-db/.env"
+    ["$CONFIG_DIR/env/youtube-bot.env"]="$PROJECT_ROOT/services/youtube-bot/.env"
+    ["$CONFIG_DIR/prompts/system-prompt.md"]="$PROJECT_ROOT/apps/stage-web/public/prompts/system-prompt.md"
+)
+
+# バックアップ作成
+create_backup() {
+    echo "📦 Creating backup in $BACKUP_DIR"
+    mkdir -p "$BACKUP_DIR"
+
+    for src in "${!SYNC_MAP[@]}"; do
+        dest="${SYNC_MAP[$src]}"
+        if [[ -f "$dest" ]]; then
+            cp "$dest" "$BACKUP_DIR/$(basename "$dest")"
+        fi
+    done
+}
+
+# 差分表示
+show_diff() {
+    for src in "${!SYNC_MAP[@]}"; do
+        dest="${SYNC_MAP[$src]}"
+        if [[ -f "$dest" ]]; then
+            echo "📄 Changes in $(basename "$dest"):"
+            diff -u "$dest" "$src" || true
+            echo ""
+        fi
+    done
+}
+
+# 同期実行
+sync_configs() {
+    for src in "${!SYNC_MAP[@]}"; do
+        dest="${SYNC_MAP[$src]}"
+        echo "📋 Syncing $(basename "$src") → $dest"
+
+        # ディレクトリ作成
+        mkdir -p "$(dirname "$dest")"
+
+        # ファイルコピー
+        cp "$src" "$dest"
+    done
+
+    echo "✅ Configuration sync completed"
+}
+
+# バリデーション
+validate_configs() {
+    echo "🔍 Validating configurations..."
+
+    # 必須環境変数チェック
+    for env_file in "$CONFIG_DIR/env"/*.env; do
+        echo "Checking $(basename "$env_file")..."
+        # ここに具体的なバリデーションロジック
+    done
+
+    echo "✅ Validation passed"
+}
+
+# メイン処理
+case "${1:-}" in
+    --dry-run)
+        show_diff
+        ;;
+    --diff)
+        show_diff
+        ;;
+    --restore)
+        # 最新のバックアップから復元
+        latest_backup=$(ls -td $PROJECT_ROOT/.config-backups/* | head -1)
+        echo "🔄 Restoring from $latest_backup"
+        # 復元ロジック
+        ;;
+    --validate)
+        validate_configs
+        ;;
+    *)
+        create_backup
+        validate_configs
+        sync_configs
+        ;;
+esac
+```
+
+### Makefile統合
+
+```makefile
+# プロジェクトルートのMakefile
+
+.PHONY: config-sync config-diff config-validate config-restore
+
+# 設定の同期
+config-sync:
+	@./config/sync-config.sh
+
+# 差分確認
+config-diff:
+	@./config/sync-config.sh --diff
+
+# バリデーション
+config-validate:
+	@./config/sync-config.sh --validate
+
+# バックアップから復元
+config-restore:
+	@./config/sync-config.sh --restore
+```
+
+### メリット
+
+1. **一元管理**: すべての設定を `config/` で管理
+2. **安全性**: バックアップ機能で誤操作を防止
+3. **可視性**: 差分表示で変更内容を確認
+4. **バリデーション**: 設定ミスを事前に検出
+5. **再現性**: 設定を簡単に複製・共有可能
+6. **ドキュメント化**: `config/README.md` で設定ガイドを提供
+
+### デメリットと対策
+
+| デメリット | 対策 |
+|----------|------|
+| 設定の二重管理 | スクリプト実行を習慣化、pre-commit hookで自動チェック |
+| 同期忘れ | CI/CDで自動バリデーション、Makefileで簡単実行 |
+| 秘密情報の扱い | `.env.example`をテンプレート化、実際の値は`.env`のみ |
+
+### 実装優先度
+
+- **Priority**: Medium
+- **Effort**: Small (2-4時間)
+- **Impact**: Medium (開発効率向上)
+- **Status**: 設計完了、実装待ち
+
+### 関連Issue/PR
+
+- 実装時に作成
+
 ---
 
-**最終更新**: 2025-10-15
-**ステータス**: 実装計画確定（既存インフラ活用で大幅簡素化）
-**実装見積もり**: 約500行、1-2週間
+**最終更新**: 2025-10-17
+**ステータス**: 設計完了
+**実装見積もり**: 2-4時間

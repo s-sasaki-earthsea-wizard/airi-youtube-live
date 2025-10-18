@@ -17,6 +17,7 @@ import { toast, Toaster } from 'vue-sonner'
 
 import LicenseNotice from './components/LicenseNotice.vue'
 
+import { useIdleTalk } from './composables/idle-talk'
 import { useKnowledgeDB } from './composables/useKnowledgeDB'
 import { useKnowledgeDBIntegration } from './composables/useKnowledgeDBIntegration'
 import { usePWAStore } from './stores/pwa'
@@ -86,23 +87,54 @@ onMounted(async () => {
   const ttsVoiceId = import.meta.env.VITE_TTS_VOICE_ID
 
   // Configure LLM provider if environment variables are set
+  console.info('[App.vue] LLM config:', { llmProvider, hasApiKey: !!llmApiKey, llmModel })
   if (llmProvider && llmApiKey) {
+    // Force override localStorage values with environment variables
+    // This ensures env vars always take precedence over cached values
+    localStorage.setItem('settings/consciousness/active-provider', llmProvider)
+    if (llmModel) {
+      localStorage.setItem('settings/consciousness/active-model', llmModel)
+    }
+
     providersStore.providers[llmProvider] = {
       ...providersStore.providers[llmProvider],
       apiKey: llmApiKey,
       baseUrl: llmBaseUrl,
     }
+
+    // Set store values (useLocalStorage will sync from localStorage)
     consciousnessStore.activeProvider = llmProvider
     consciousnessStore.activeModel = llmModel
+
+    console.info('[App.vue] LLM provider configured from env:', {
+      activeProvider: consciousnessStore.activeProvider,
+      activeModel: consciousnessStore.activeModel,
+    })
+  }
+  else {
+    console.warn('[App.vue] LLM provider NOT configured - missing environment variables')
   }
 
   // Configure TTS provider if environment variables are set
+  console.info('[App.vue] TTS config:', { ttsProvider, hasApiKey: !!ttsApiKey, ttsModel, ttsVoiceId })
   if (ttsProvider && ttsApiKey) {
+    // Force override localStorage values with environment variables
+    // This ensures env vars always take precedence over cached values
+    localStorage.setItem('settings/speech/active-provider', ttsProvider)
+    if (ttsModel) {
+      localStorage.setItem('settings/speech/active-model', ttsModel)
+    }
+    if (ttsVoiceId) {
+      localStorage.setItem('settings/speech/voice', ttsVoiceId)
+    }
+
     providersStore.providers[ttsProvider] = {
       ...providersStore.providers[ttsProvider],
       apiKey: ttsApiKey,
       baseUrl: ttsBaseUrl,
     }
+
+    // Set store values (useLocalStorage will sync from localStorage)
     speechStore.activeSpeechProvider = ttsProvider
     speechStore.activeSpeechModel = ttsModel
 
@@ -124,6 +156,15 @@ onMounted(async () => {
       // Now set the voice ID - the watcher will find it in availableVoices
       speechStore.activeSpeechVoiceId = ttsVoiceId
     }
+
+    console.info('[App.vue] TTS provider configured from env:', {
+      activeProvider: speechStore.activeSpeechProvider,
+      activeModel: speechStore.activeSpeechModel,
+      activeVoiceId: speechStore.activeSpeechVoiceId,
+    })
+  }
+  else {
+    console.warn('[App.vue] TTS provider NOT configured - missing environment variables')
   }
 
   // Configure character from environment variables
@@ -170,6 +211,29 @@ onMounted(async () => {
     // Initialize the shared integration state
     // Stage.vue will use this state to inject knowledge
     knowledgeDBIntegration.initialize(baseSystemPrompt, knowledgeDB)
+  }
+
+  // Initialize idle talk feature if enabled
+  const idleTalkEnabled = import.meta.env.VITE_IDLE_TALK_ENABLED === 'true'
+  const idleTalkTimeout = Number(import.meta.env.VITE_IDLE_TIMEOUT || 60000)
+  const idleTalkMode = import.meta.env.VITE_IDLE_TALK_MODE || 'random'
+  const idleTalkMinSimilarity = Number(import.meta.env.VITE_IDLE_TALK_MIN_SIMILARITY || 0.0)
+  const idleTalkContinueContext = import.meta.env.VITE_IDLE_TALK_CONTINUE_CONTEXT === 'true'
+  const idleTalkMaxContinuation = Number(import.meta.env.VITE_IDLE_TALK_MAX_CONTINUATION || 5)
+
+  if (idleTalkEnabled) {
+    console.info('[App.vue] Initializing idle talk feature')
+
+    const idleTalk = useIdleTalk({
+      enabled: idleTalkEnabled,
+      timeout: idleTalkTimeout,
+      mode: idleTalkMode as 'random' | 'sequential',
+      minSimilarity: idleTalkMinSimilarity,
+      continueContext: idleTalkContinueContext,
+      maxContextContinuation: idleTalkMaxContinuation,
+    })
+
+    idleTalk.initialize()
   }
 
   // Onboarding is disabled for OBS streaming usage

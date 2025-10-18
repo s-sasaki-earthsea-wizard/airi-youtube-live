@@ -129,6 +129,38 @@ The endpoint automatically:
 2. Performs cosine similarity search against stored vectors
 3. Returns results sorted by similarity score
 
+#### Random Posts (for Idle Talk Feature)
+
+Get random posts without similarity search:
+
+```bash
+GET http://localhost:3100/knowledge/random?limit=5
+```
+
+**Parameters:**
+- `limit` (optional, default: 5): Maximum number of random posts to return
+- `source` (optional): Filter by source (e.g., 'discord', 'twitter')
+
+**Response:**
+```json
+{
+  "posts": [
+    {
+      "id": "uuid",
+      "source": "discord",
+      "author": "megssk",
+      "content": "なんかの認証をするときに汚い背景に書かれてる文字を読んだり...",
+      "url": "https://discord.com/channels/...",
+      "posted_at": 1234567890
+    }
+  ],
+  "total": 5
+}
+```
+
+**Use Case:**
+This endpoint is designed for the idle talk feature in stage-web, where the AI character spontaneously talks about random topics from the knowledge database when there is no user input.
+
 ### Data Collection
 
 #### Collect from Discord
@@ -140,11 +172,12 @@ pnpm collect:discord
 ```
 
 **Features:**
-- Fetches historical messages (up to 100 on startup)
+- Fetches historical messages (default: all available messages using pagination)
 - Real-time monitoring for new messages
 - Automatic vectorization using OpenAI Embeddings API
 - Duplicate prevention (UPSERT by Discord message ID)
 - Skips empty messages and bot messages
+- Configurable message limit via `DISCORD_HISTORICAL_LIMIT` environment variable
 
 **Discord Bot Setup:**
 1. Create bot at [Discord Developer Portal](https://discord.com/developers/applications)
@@ -182,7 +215,8 @@ make db-setup
 make db-start
 
 # Sync Discord messages (stop collector → stop DB → start DB → start collector)
-make db-sync-discord
+make db-sync-discord              # Sync all Discord messages (default)
+make db-sync-discord LIMIT=100    # Sync only last 100 messages
 
 # Start Discord collector (runs in background)
 make collect-discord
@@ -193,8 +227,14 @@ make collect-discord-stop
 # Restart Discord collector
 make collect-discord-restart
 
+# Restart knowledge-db API server (without restarting DB)
+make db-restart
+
 # Export database to JSON
 make db-export
+
+# ⚠️ Delete all records (dangerous, requires confirmation)
+make db-danger-clear-all
 
 # Check service status
 make db-status
@@ -204,9 +244,11 @@ make db-stop
 ```
 
 **Note**:
+
 - `make collect-discord` and `make db-sync-discord` run the Discord collector in background
 - Check collector logs: `tail -f /tmp/discord-collector.log`
-- The collector automatically fetches up to 100 historical messages on startup
+- The collector automatically fetches all available historical messages on startup (using pagination)
+- Limit historical messages with `DISCORD_HISTORICAL_LIMIT` environment variable if needed
 - New messages are collected in real-time and automatically vectorized
 
 ## Database Schema
@@ -234,6 +276,7 @@ make db-stop
 stage-web integrates with knowledge-db through the `useKnowledgeDB` composable and `onBeforeMessageComposed` hook.
 
 **Configuration** (`.env`):
+
 ```env
 VITE_KNOWLEDGE_DB_ENABLED=true
 VITE_KNOWLEDGE_DB_URL=http://localhost:3100
@@ -242,6 +285,7 @@ VITE_KNOWLEDGE_DB_THRESHOLD=0.3
 ```
 
 **Integration Flow**:
+
 1. User sends message in stage-web
 2. `onBeforeMessageComposed` hook triggers
 3. `useKnowledgeDB.queryKnowledge(userMessage)` queries knowledge-db API
@@ -250,8 +294,34 @@ VITE_KNOWLEDGE_DB_THRESHOLD=0.3
 6. LLM generates response with character knowledge
 
 **Files**:
+
 - `apps/stage-web/src/composables/useKnowledgeDB.ts` - Knowledge DB composable
 - `apps/stage-web/src/App.vue` - Hook registration in `onMounted()`
+
+**Idle Talk Feature**:
+stage-web also includes an idle talk feature that automatically starts conversations when there is no user input for a specified time. It uses the `/knowledge/random` endpoint to select random topics from the knowledge database.
+
+**Configuration** (`.env`):
+
+```env
+VITE_IDLE_TALK_ENABLED=true
+VITE_IDLE_TIMEOUT=60000  # 60 seconds
+VITE_IDLE_TALK_MODE=random
+```
+
+**Integration Flow**:
+
+1. Timer monitors user inactivity
+2. After timeout, `useKnowledgeDB.getRandomTopic()` fetches 5 random posts
+3. One topic is randomly selected
+4. LLM generates a response based on the topic
+5. TTS converts response to speech and plays audio
+6. Timer resets for next iteration
+
+**Files**:
+
+- `apps/stage-web/src/composables/idle-talk.ts` - Idle talk feature implementation
+- `apps/stage-web/src/composables/useKnowledgeDB.ts` - `getRandomTopic()` method
 
 ### youtube-bot (Not Yet Integrated)
 
@@ -305,7 +375,7 @@ pnpm db:push
 
 ## Architecture
 
-```
+```text
 Discord Channel
   ↓ Discord Bot (collect:discord)
   ↓ Real-time Vectorization (OpenAI Embeddings API)

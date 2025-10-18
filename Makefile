@@ -1,5 +1,6 @@
 .PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube stop \
-        db-setup db-start db-stop db-status db-export db-sync-discord collect-discord collect-discord-stop collect-discord-restart
+        db-setup db-start db-stop db-restart db-status db-export db-sync-discord db-danger-clear-all \
+        collect-discord collect-discord-stop collect-discord-restart
 
 # デフォルトターゲット: ヘルプを表示
 help:
@@ -20,12 +21,17 @@ help:
 	@echo "  make db-setup              - Initial setup (install deps + start DB + apply schema)"
 	@echo "  make db-start              - Start knowledge-db service (DB + API server)"
 	@echo "  make db-stop               - Stop knowledge-db service"
+	@echo "  make db-restart            - Restart knowledge-db service (stop → start)"
 	@echo "  make db-status             - Check knowledge-db status"
 	@echo "  make db-export             - Export database to JSON file"
-	@echo "  make db-sync-discord       - Sync Discord messages (stop → collect → restart)"
+	@echo "  make db-sync-discord       - Sync ALL Discord messages (default, unlimited)"
+	@echo "  make db-sync-discord LIMIT=N - Sync only last N Discord messages"
 	@echo "  make collect-discord       - Start Discord message collector"
 	@echo "  make collect-discord-stop  - Stop Discord message collector"
 	@echo "  make collect-discord-restart - Restart Discord message collector"
+	@echo ""
+	@echo "⚠️  DANGER ZONE (requires confirmation):"
+	@echo "  make db-danger-clear-all   - ⚠️  DELETE ALL records (can restore with db-sync-discord)"
 	@echo ""
 
 # 配信開始（全サービス起動、ログ最小化）
@@ -122,6 +128,23 @@ db-stop:
 	@cd services/knowledge-db && docker-compose down
 	@echo "✅ Knowledge DB stopped"
 
+# knowledge-db サービス再起動
+db-restart:
+	@echo "🔄 Restarting knowledge-db service..."
+	@echo "🛑 Stopping API server..."
+	@pkill -f "knowledge-db.*tsx" || true
+	@sleep 1
+	@echo "🌐 Starting API server (port 3100)..."
+	@cd services/knowledge-db && pnpm start > /dev/null 2>&1 &
+	@sleep 2
+	@echo "✅ Knowledge DB API server restarted"
+	@echo ""
+	@echo "Endpoints:"
+	@echo "  - Health: http://localhost:3100/health"
+	@echo "  - Posts:  http://localhost:3100/posts"
+	@echo "  - Query:  http://localhost:3100/knowledge?query=xxx"
+	@echo "  - Random: http://localhost:3100/knowledge/random?limit=5"
+
 # knowledge-db ステータス確認
 db-status:
 	@echo "📊 Knowledge DB Status"
@@ -139,8 +162,16 @@ db-export:
 	@echo "✅ Export complete!"
 
 # Discord同期（Collector停止 → DB停止 → DB起動 → Collector起動）
+# Usage:
+#   make db-sync-discord              - Sync all Discord messages (default)
+#   make db-sync-discord LIMIT=100    - Sync only last 100 messages
 db-sync-discord:
 	@echo "🔄 Syncing Discord messages..."
+	@if [ -n "$(LIMIT)" ]; then \
+		echo "📊 Limit: $(LIMIT) messages"; \
+	else \
+		echo "📊 Fetching ALL messages (no limit)"; \
+	fi
 	@echo "🛑 Stopping Discord collector..."
 	$(MAKE) collect-discord-stop
 	@echo "🛑 Stopping database..."
@@ -150,7 +181,11 @@ db-sync-discord:
 	$(MAKE) db-start
 	@sleep 2
 	@echo "📡 Starting Discord collector..."
-	@cd services/knowledge-db && pnpm collect:discord > /tmp/discord-collector.log 2>&1 &
+	@if [ -n "$(LIMIT)" ]; then \
+		cd services/knowledge-db && DISCORD_HISTORICAL_LIMIT=$(LIMIT) pnpm collect:discord > /tmp/discord-collector.log 2>&1 &; \
+	else \
+		cd services/knowledge-db && pnpm collect:discord > /tmp/discord-collector.log 2>&1 &; \
+	fi
 	@sleep 3
 	@echo "✅ Discord sync complete!"
 	@echo ""
@@ -180,3 +215,44 @@ collect-discord-restart:
 	@pkill -f "discord.ts" || true
 	@sleep 1
 	@pnpm -F @proj-airi/knowledge-db collect:discord
+
+# ========================================
+# ⚠️  DANGER ZONE: Destructive Operations
+# ========================================
+
+# ⚠️  全レコード削除（要確認、復元可能）
+db-danger-clear-all:
+	@echo ""
+	@echo "╔═══════════════════════════════════════════════════════════════╗"
+	@echo "║                    ⚠️  ⚠️  ⚠️  WARNING  ⚠️  ⚠️  ⚠️                    ║"
+	@echo "╠═══════════════════════════════════════════════════════════════╣"
+	@echo "║  This will DELETE ALL RECORDS from the knowledge database!   ║"
+	@echo "║                                                               ║"
+	@echo "║  • All posts will be permanently removed                     ║"
+	@echo "║  • All embeddings will be deleted                            ║"
+	@echo "║  • This cannot be undone without backup                      ║"
+	@echo "║                                                               ║"
+	@echo "║  Recovery option:                                            ║"
+	@echo "║    Run 'make db-sync-discord' to restore from Discord        ║"
+	@echo "║                                                               ║"
+	@echo "╚═══════════════════════════════════════════════════════════════╝"
+	@echo ""
+	@read -p "Type 'DELETE ALL' to confirm (or Ctrl+C to cancel): " confirm; \
+	if [ "$$confirm" != "DELETE ALL" ]; then \
+		echo "❌ Cancelled. Confirmation failed."; \
+		exit 1; \
+	fi
+	@echo ""
+	@read -p "Are you absolutely sure? Type 'YES I AM SURE': " confirm2; \
+	if [ "$$confirm2" != "YES I AM SURE" ]; then \
+		echo "❌ Cancelled. Final confirmation failed."; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "🗑️  Deleting all records from knowledge database..."
+	@docker exec -i airi-knowledge-db psql -U airi -d airi_knowledge -c "TRUNCATE TABLE posts RESTART IDENTITY CASCADE;" 2>&1 | grep -v "TRUNCATE TABLE" || true
+	@echo "✅ All records deleted!"
+	@echo ""
+	@echo "To restore from Discord:"
+	@echo "  make db-sync-discord"
+	@echo ""

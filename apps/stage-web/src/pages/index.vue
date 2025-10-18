@@ -14,6 +14,7 @@ import MobileHeader from '../components/Layouts/MobileHeader.vue'
 import MobileInteractiveArea from '../components/Layouts/MobileInteractiveArea.vue'
 import AnimatedWave from '../components/Widgets/AnimatedWave.vue'
 
+import { isCurrentlyIdleTalking } from '../composables/idle-talk'
 import { useStreamingMode } from '../composables/streaming-mode'
 import { themeColorFromPropertyOf, useThemeColor } from '../composables/theme-color'
 import { useKnowledgeDBIntegration } from '../composables/useKnowledgeDBIntegration'
@@ -49,6 +50,20 @@ onMounted(() => {
 
     chatStore.onBeforeMessageComposed(async (userMessage: string) => {
       console.info('[index.vue] Knowledge hook triggered for message:', userMessage)
+
+      // Skip Knowledge DB query during idle talk
+      if (isCurrentlyIdleTalking.value) {
+        console.info('[index.vue] Skipping Knowledge DB query (idle talk in progress)')
+        // Reset to base prompt to avoid contamination from previous context
+        const { baseSystemPrompt } = integrationState
+        const defaultCard = airiCardStore.getCard('default')
+        if (defaultCard) {
+          defaultCard.description = baseSystemPrompt
+          console.info('[index.vue] Reset to base system prompt for idle talk')
+        }
+        return
+      }
+
       try {
         const { baseSystemPrompt, knowledgeDB } = integrationState
 

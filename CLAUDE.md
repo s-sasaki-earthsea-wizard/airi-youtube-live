@@ -74,6 +74,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - [2025-10-10: YouTube Live Chat Integration](./.claude-notes/sessions/2025-10-10-youtube-integration.md) - YouTube Live配信機能の統合
 - [2025-10-16: TTS Voice Configuration Fix](./.claude-notes/sessions/2025-10-16-tts-voice-fix.md) - 環境変数からのTTS設定読み込みバグ修正
 - [2025-10-17: YouTube Streaming Mode UI](./.claude-notes/sessions/2025-10-17-streaming-mode-ui.md) - YouTube配信向けUIカスタマイズ機能の実装
+- [2025-10-17: Idle Talk with Knowledge DB](./.claude-notes/sessions/2025-10-17-idle-talk.md) - アイドル状態でのランダム話題会話機能の実装
 
 ## 将来の拡張計画
 
@@ -113,6 +114,25 @@ Claude Codeを使ってこのプロジェクトに貢献する場合：
 - [YouTube Data API v3](https://developers.google.com/youtube/v3)
 - [Project AIRI Repository](https://github.com/moeru-ai/airi)
 - [CONTRIBUTING.md](./CONTRIBUTING.md)
+
+## 実装済み機能
+
+### stage-web
+
+- ✅ **YouTube配信向けUIカスタマイズ** - ヘッダー、チャット応答、入力欄の表示切替
+- ✅ **Knowledge DB統合** - RAGによる文脈に応じた知識の提供
+- ✅ **Idle Talk機能** - アイドル状態でのランダム話題会話（Phase 1完了）
+  - タイマーベースのアイドル検知
+  - Knowledge DBからのランダム話題取得
+  - LLM応答生成とTTS音声再生
+  - 環境変数でのON/OFF制御
+
+### knowledge-db
+
+- ✅ **PostgreSQL + pgvector** - ベクトル類似度検索
+- ✅ **Discord メッセージ収集** - リアルタイム収集と自動ベクトル化
+- ✅ **RAG統合** - `/knowledge` エンドポイント
+- ✅ **ランダム話題取得** - `/knowledge/random` エンドポイント（Idle Talk用）
 
 ---
 
