@@ -266,7 +266,110 @@ None currently available. Users should avoid sending messages right at the idle 
 - `apps/stage-web/src/composables/idle-talk.ts` - `handleIdleTimeout()`, `resetIdleTimer()`
 - `packages/stage-ui/src/stores/chat.ts` - `send()` function
 
-### Issue 2: Continuation Counter Not Incrementing (FIXED)
+### Issue 2: User Response After AI Question Clears Context
+
+**Severity**: Medium
+**Status**: Open
+**Impact**: Breaks conversation flow and naturalness
+
+**Description**:
+When the AI asks a question during idle talk and the user responds, the current implementation clears the topic context, causing the AI to lose the conversation thread.
+
+**Example Scenario**:
+
+```text
+AI (Idle Talk): 「トキが好き！<|DELAY:1|> みんなはどのキャラが好き？」
+                (Translation: "I like Toki! Who's your favorite character?")
+                ↓
+User: 「ラオウが好きです」
+      (Translation: "I like Raoh")
+                ↓
+onBeforeMessageComposed → contextContinuationCount = 0, lastResponse = null
+                ↓
+AI: （北斗の拳の文脈を知らずに応答）
+    "Raoh? What are you talking about?"
+```
+
+**Root Cause**:
+The current design treats all user inputs as "new topic initiations" and clears the previous context:
+```typescript
+chatStore.onBeforeMessageComposed(async () => {
+  if (isCurrentlyIdleTalking.value) return
+
+  // This clears context even when user is responding to AI's question
+  lastResponse.value = null
+  initialTopic.value = null
+  contextContinuationCount.value = 0
+})
+```
+
+**Impact on User Experience**:
+
+- AI appears to have "amnesia" when user responds to its questions
+- Conversation feels unnatural and disjointed
+- Reduces the illusion of spontaneous interaction
+- Especially problematic when AI explicitly asks for user input
+
+**Workaround**:
+None currently available. Users will experience context loss when responding to AI questions during idle talk.
+
+**Proposed Solutions** (for future implementation):
+
+1. **Question Detection**
+   - Detect if AI's last response contains a question mark or question patterns
+   - Set a flag: `aiAskedQuestion = true`
+   - Preserve context if user responds within timeout period
+
+2. **Smart Context Preservation**
+   - Analyze user input to detect if it's a response to previous context
+   - Use Knowledge DB similarity search between user input and last AI response
+   - If similarity > threshold (e.g., 0.5), preserve context
+   - Otherwise, treat as new topic
+
+3. **Timeout-Based Context Clearing**
+   - Don't clear context immediately on user input
+   - Clear context only after:
+     - X minutes of silence (e.g., 5 minutes)
+     - User explicitly changes topic (low similarity to recent messages)
+     - Maximum context age reached
+
+4. **Explicit Topic Switching**
+   - Train a small classifier to detect topic changes
+   - Clear context only when topic shift is detected
+   - Preserve context for follow-up questions and related responses
+
+5. **Hybrid Approach** (Recommended)
+
+   ```typescript
+   const shouldClearContext = async (userMessage: string) => {
+     // Don't clear if AI asked a question recently (< 2 minutes ago)
+     if (aiAskedQuestion && Date.now() - lastResponseTime < 120000) {
+       return false
+     }
+
+     // Don't clear if user message is semantically related
+     if (lastResponse.value) {
+       const similarity = await computeSimilarity(userMessage, lastResponse.value)
+       if (similarity > 0.4) return false
+     }
+
+     // Otherwise, treat as new topic
+     return true
+   }
+   ```
+
+**Related Code**:
+
+- `apps/stage-web/src/composables/idle-talk.ts` - `onBeforeMessageComposed` hook
+- `packages/stage-ui/src/stores/chat.ts` - Message composition logic
+
+**Priority**: Medium (improves UX but not blocking for prototype)
+
+**Estimated Effort**: 2-4 hours (depending on solution complexity)
+
+---
+
+### Issue 3: Continuation Counter Not Incrementing (FIXED)
 
 **Status**: ✅ Fixed in this session
 
@@ -329,12 +432,14 @@ VITE_IDLE_TALK_MAX_CONTINUATION=2  # For faster testing
 ## Summary
 
 All planned objectives have been completed:
+
 - ✅ Topic continuation works correctly (counts increment properly)
 - ✅ Environment variables fully control both LLM and TTS settings
 - ✅ Comprehensive debugging logs added for troubleshooting
 - ✅ Known issue documented (race condition)
 
 The idle talk feature is now production-ready with the following caveats:
+
 1. Known race condition when user input coincides with idle timeout (documented)
 2. Recommend using longer idle timeouts (120s+) to minimize collision probability
 
