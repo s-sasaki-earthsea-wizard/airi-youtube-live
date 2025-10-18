@@ -20,7 +20,10 @@ import 'dotenv/config'
 // Environment variables
 const DISCORD_BOT_TOKEN = env.DISCORD_BOT_TOKEN
 const DISCORD_CHANNEL_ID = env.DISCORD_CHANNEL_ID
-const HISTORICAL_MESSAGE_LIMIT = Number.parseInt(env.DISCORD_HISTORICAL_LIMIT || '100', 10)
+// Default to unlimited (0 = fetch all), can be limited via env var
+const HISTORICAL_MESSAGE_LIMIT = env.DISCORD_HISTORICAL_LIMIT
+  ? Number.parseInt(env.DISCORD_HISTORICAL_LIMIT, 10)
+  : 0 // 0 means fetch all available messages
 
 // Validate required environment variables
 if (!DISCORD_BOT_TOKEN) {
@@ -97,6 +100,8 @@ async function saveMessage(message: Message): Promise<void> {
 
 /**
  * Fetch and save historical messages from the channel
+ * @param channelId - Discord channel ID
+ * @param limit - Maximum number of messages to fetch (0 = fetch all available)
  */
 async function fetchHistoricalMessages(channelId: string, limit: number): Promise<void> {
   try {
@@ -107,23 +112,59 @@ async function fetchHistoricalMessages(channelId: string, limit: number): Promis
       return
     }
 
-    console.info(`[Discord Collector] Fetching up to ${limit} historical messages...`)
+    const textChannel = channel as TextChannel
+    const allMessages: Message[] = []
 
-    const messages = await (channel as TextChannel).messages.fetch({ limit })
-    console.info(`[Discord Collector] Found ${messages.size} messages`)
+    if (limit === 0) {
+      // Fetch all messages using pagination (Discord API limit: 100 per request)
+      console.info('[Discord Collector] Fetching ALL historical messages (pagination)...')
+      let lastMessageId: string | undefined
+      let fetchedCount = 0
+
+      while (true) {
+        const fetchOptions = lastMessageId
+          ? { limit: 100, before: lastMessageId }
+          : { limit: 100 }
+
+        const batch = await textChannel.messages.fetch(fetchOptions)
+        if (batch.size === 0)
+          break
+
+        allMessages.push(...Array.from(batch.values()))
+        fetchedCount += batch.size
+        lastMessageId = batch.last()?.id
+
+        console.info(`[Discord Collector] Fetched ${fetchedCount} messages so far...`)
+
+        // Stop if we got fewer than 100 messages (reached the end)
+        if (batch.size < 100)
+          break
+      }
+
+      console.info(`[Discord Collector] Found ${allMessages.length} total messages`)
+    }
+    else {
+      // Fetch limited number of messages
+      console.info(`[Discord Collector] Fetching up to ${limit} historical messages...`)
+      const messages = await textChannel.messages.fetch({ limit })
+      allMessages.push(...Array.from(messages.values()))
+      console.info(`[Discord Collector] Found ${allMessages.length} messages`)
+    }
 
     // Save messages in chronological order (oldest first)
-    const sortedMessages = Array.from(messages.values()).reverse()
+    const sortedMessages = allMessages.reverse()
 
+    let savedCount = 0
     for (const message of sortedMessages) {
       // Skip bot messages
       if (message.author.bot)
         continue
 
       await saveMessage(message)
+      savedCount++
     }
 
-    console.info('[Discord Collector] Historical messages saved')
+    console.info(`[Discord Collector] Saved ${savedCount} historical messages`)
   }
   catch (error) {
     console.error('[Discord Collector] Error fetching historical messages:', error)
