@@ -28,7 +28,8 @@ export const useLive2d = defineStore('live2d', () => {
     }
   })
 
-  const position = useLocalStorage('settings/live2d/position', { x: 0, y: 0 }) // position is relative to the center of the screen, units are %
+  // Avatar position (position is relative to the center of the screen, units are %)
+  const position = useLocalStorage('settings/live2d/position', { x: 0, y: 0 })
   const positionInPercentageString = computed(() => ({
     x: `${position.value.x}%`,
     y: `${position.value.y}%`,
@@ -36,6 +37,8 @@ export const useLive2d = defineStore('live2d', () => {
   const currentMotion = ref<{ group: string, index?: number }>({ group: 'Idle', index: 0 })
   const availableMotions = ref<{ motionName: string, motionIndex: number, fileName: string }[]>([])
   const motionMap = useLocalStorage<Record<string, string>>('settings/live2d/motion-map', {})
+
+  // Avatar scale
   const scale = useLocalStorage('settings/live2d/scale', 1)
 
   return {

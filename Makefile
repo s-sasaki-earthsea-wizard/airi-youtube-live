@@ -1,4 +1,4 @@
-.PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube stop \
+.PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube stop stop-all \
         db-setup db-start db-stop db-restart db-status db-export db-sync-discord db-danger-clear-all \
         collect-discord collect-discord-stop collect-discord-restart
 
@@ -36,6 +36,9 @@ help:
 
 # 配信開始（全サービス起動、ログ最小化）
 stream:
+	@make stop-all
+	@echo "🗑️ Removing obs-browser cache..."
+	rm -rf ~/Library/Application\ Support/obs-studio/plugin_config/obs-browser/*
 	@echo "🎥 Starting streaming services..."
 	@trap 'make stream-stop' INT; \
 	pnpm -F @proj-airi/server-runtime dev > /dev/null 2>&1 & \
@@ -67,21 +70,30 @@ test-youtube:
 	@read -p "Enter message (default: テストメッセージです): " msg; \
 	pnpm -F @proj-airi/youtube-bot test-message "$${msg:-テストメッセージです}"
 
-# 配信停止
-stream-stop:
-	@echo "🛑 Stopping streaming services..."
-	@pkill -f "server-runtime" || true
-	@pkill -f "stage-web" || true
-	@pkill -f "youtube-bot" || true
-	@echo "✅ Streaming stopped"
+# すべてのサービスを停止（共通処理）
+stop-all:
+	@echo "🛑 Stopping all AIRI services..."
+	@count=0; \
+	for proc in "server-runtime" "stage-web" "youtube-bot"; do \
+		num=$$(pgrep -f "$$proc" | wc -l); \
+		if [ $$num -gt 0 ]; then \
+			echo "  Stopping $$num process(es) for $$proc..."; \
+			pkill -f "$$proc" || true; \
+			count=$$((count + num)); \
+		fi; \
+	done; \
+	sleep 1; \
+	if [ $$count -gt 0 ]; then \
+		echo "✅ Stopped $$count process(es)"; \
+	else \
+		echo "✅ No processes running"; \
+	fi
 
-# すべてのサービスを停止（開発用）
-stop:
-	@echo "🛑 Stopping all services..."
-	@pkill -f "server-runtime" || true
-	@pkill -f "stage-web" || true
-	@pkill -f "youtube-bot" || true
-	@echo "✅ All services stopped"
+# 配信停止（stop-allのエイリアス）
+stream-stop: stop-all
+
+# すべてのサービスを停止（stop-allのエイリアス）
+stop: stop-all
 
 # ========================================
 # Knowledge DB Commands
@@ -182,9 +194,9 @@ db-sync-discord:
 	@sleep 2
 	@echo "📡 Starting Discord collector..."
 	@if [ -n "$(LIMIT)" ]; then \
-		cd services/knowledge-db && DISCORD_HISTORICAL_LIMIT=$(LIMIT) pnpm collect:discord > /tmp/discord-collector.log 2>&1 &; \
+		cd services/knowledge-db && DISCORD_HISTORICAL_LIMIT=$(LIMIT) pnpm collect:discord > /tmp/discord-collector.log 2>&1 & \
 	else \
-		cd services/knowledge-db && pnpm collect:discord > /tmp/discord-collector.log 2>&1 &; \
+		cd services/knowledge-db && pnpm collect:discord > /tmp/discord-collector.log 2>&1 & \
 	fi
 	@sleep 3
 	@echo "✅ Discord sync complete!"

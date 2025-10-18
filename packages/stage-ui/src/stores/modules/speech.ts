@@ -16,9 +16,9 @@ export const useSpeechStore = defineStore('speech', () => {
   const { allAudioSpeechProvidersMetadata } = storeToRefs(providersStore)
 
   // State
-  const activeSpeechProvider = useLocalStorage('settings/speech/active-provider', '')
-  const activeSpeechModel = useLocalStorage('settings/speech/active-model', 'eleven_multilingual_v2')
-  const activeSpeechVoiceId = useLocalStorage<string>('settings/speech/voice', '')
+  const activeSpeechProvider = useLocalStorage('settings/speech/active-provider', import.meta.env.VITE_TTS_PROVIDER || '')
+  const activeSpeechModel = useLocalStorage('settings/speech/active-model', import.meta.env.VITE_TTS_MODEL || 'eleven_multilingual_v2')
+  const activeSpeechVoiceId = useLocalStorage<string>('settings/speech/voice', import.meta.env.VITE_TTS_VOICE_ID || '')
   const activeSpeechVoice = ref<VoiceInfo>()
 
   const pitch = useLocalStorage('settings/speech/pitch', 0)
