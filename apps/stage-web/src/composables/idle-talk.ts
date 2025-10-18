@@ -1,14 +1,19 @@
 /**
  * Idle Talk Composable
  *
- * Monitors user inactivity and triggers automatic conversation
- * based on random topics from the knowledge database.
+ * Manages conversation topic continuation for both user-initiated and automatic conversations.
  *
  * Features:
- * - Timer-based idle detection
- * - Random topic selection from Knowledge DB
+ * - Timer-based idle detection for automatic conversation
+ * - Random topic selection from Knowledge DB when idle
+ * - Topic continuation for both user input and idle talk
  * - Automatic LLM response generation and TTS playback
  * - Configurable via environment variables
+ *
+ * Design:
+ * - User input: Starts a new topic, then continues it for N iterations
+ * - Idle timeout: If no context, starts with random topic; otherwise continues current topic
+ * - Both paths are treated equally after initial topic selection
  */
 
 import type { ChatProvider } from '@xsai-ext/shared-providers'
@@ -49,19 +54,18 @@ export function useIdleTalk(config: IdleTalkConfig) {
   const contextContinuationCount = ref(0) // Track how many times we've continued the same topic
 
   /**
-   * Reset idle timer whenever user interacts
-   * Also clears the last topic context when user sends a message
+   * Reset idle timer
+   * @param clearContext - If true, clears the topic context (starting new topic)
    */
   function resetIdleTimer(clearContext = true) {
     lastInteractionTime.value = Date.now()
 
-    // Clear context when user interacts
-    // This ensures idle talk starts fresh after user activity
+    // Clear context when starting a new topic
     if (clearContext) {
       lastResponse.value = null
       initialTopic.value = null
       contextContinuationCount.value = 0
-      console.info('[IdleTalk] Context cleared due to user interaction')
+      console.info('[IdleTalk] Context cleared, starting new topic')
     }
 
     if (idleTimerId.value) {
@@ -70,12 +74,12 @@ export function useIdleTalk(config: IdleTalkConfig) {
       idleTimerId.value = null
     }
 
-    if (isEnabled.value && !isCurrentlyIdleTalking.value) {
-      console.info('[IdleTalk] Conditions met for starting new timer')
+    if (isEnabled.value) {
+      console.info('[IdleTalk] Starting new timer')
       startIdleTimer()
     }
     else {
-      console.info(`[IdleTalk] Not starting timer: isEnabled=${isEnabled.value}, isCurrentlyIdleTalking=${isCurrentlyIdleTalking.value}`)
+      console.info(`[IdleTalk] Not starting timer: isEnabled=${isEnabled.value}`)
     }
   }
 
@@ -92,7 +96,8 @@ export function useIdleTalk(config: IdleTalkConfig) {
   }
 
   /**
-   * Handle idle timeout - trigger automatic conversation
+   * Handle idle timeout
+   * Continues current topic if context exists, otherwise starts new random topic
    */
   async function handleIdleTimeout() {
     console.info(`[IdleTalk] Timer fired. isEnabled=${isEnabled.value}, isCurrentlyIdleTalking=${isCurrentlyIdleTalking.value}`)
@@ -215,20 +220,8 @@ export function useIdleTalk(config: IdleTalkConfig) {
         console.info(`[IdleTalk] Chat history length: ${chatStore.messages.length}`)
         console.info(`[IdleTalk] Last 3 messages:`, chatStore.messages.slice(-3).map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content.substring(0, 50) : 'non-string' })))
 
-        // Store the assistant's response for next iteration
-        const assistantMessages = chatStore.messages.filter(
-          msg => msg.role === 'assistant' && typeof msg.content === 'string',
-        )
-        const lastAssistantMessage = assistantMessages[assistantMessages.length - 1]
-
-        if (lastAssistantMessage) {
-          lastResponse.value = lastAssistantMessage.content as string
-          console.info(`[IdleTalk] Stored response for context continuation: ${(lastAssistantMessage.content as string).substring(0, 50)}...`)
-        }
-        else {
-          console.warn('[IdleTalk] No assistant response found in chat history')
-          console.warn('[IdleTalk] All messages:', chatStore.messages.map(m => ({ role: m.role, hasContent: !!m.content })))
-        }
+        // Note: lastResponse will be stored by onAssistantResponseEnd hook
+        // No need to store it here
 
         console.info('[IdleTalk] LLM response generated successfully')
       }
@@ -244,15 +237,14 @@ export function useIdleTalk(config: IdleTalkConfig) {
     finally {
       console.info('[IdleTalk] Setting isCurrentlyIdleTalking = false')
       isCurrentlyIdleTalking.value = false
-      console.info('[IdleTalk] Restarting idle timer for next iteration')
-      // Restart idle timer for next iteration
-      // Don't clear context here - we want to continue the topic
-      resetIdleTimer(false)
+      // Note: Timer will be restarted by onAssistantResponseEnd hook
+      // No need to call resetIdleTimer() here
     }
   }
 
   /**
-   * Get random topic from knowledge database (for initial topic selection only)
+   * Get random topic from knowledge database
+   * Used when there's no current topic context
    */
   async function getRandomTopic() {
     if (!knowledgeDB.config.enabled) {
@@ -283,9 +275,10 @@ export function useIdleTalk(config: IdleTalkConfig) {
   }
 
   /**
-   * Build prompt for idle talk
-   * If context continuation is enabled and there's a previous response,
-   * build a continuation prompt. Otherwise, start with a new random topic.
+   * Build prompt for conversation continuation or new topic
+   * - If there's a previous response context: Build continuation prompt
+   * - Otherwise: Start with a new random topic from Knowledge DB
+   * This function is only called when idle timeout triggers
    */
   async function buildIdleTalkPrompt(): Promise<string | null> {
     // Check if we should continue from previous response
@@ -376,14 +369,36 @@ ${relatedKnowledge}
     // Start initial timer
     startIdleTimer()
 
-    // Register hooks to reset timer on user interaction
+    // Register hook to clear context when user starts a new topic
+    // This marks the beginning of a new conversation topic
     chatStore.onBeforeMessageComposed(async () => {
-      resetIdleTimer()
-    })
+      // Skip if idle talk is in progress (to preserve continuation count)
+      if (isCurrentlyIdleTalking.value) {
+        console.info('[IdleTalk] Skipping context clear (idle talk in progress)')
+        return
+      }
 
-    chatStore.onAfterSend(async () => {
-      resetIdleTimer()
-    })
+      // Clear previous topic context when user sends a new message
+      lastResponse.value = null
+      initialTopic.value = null
+      contextContinuationCount.value = 0
+      console.info('[IdleTalk] User input detected, cleared previous topic context')
+    }, { persistent: true })
+
+    // Register hook to reset timer after assistant response completes
+    // This ensures we wait for the full response (including TTS) before starting idle timer
+    // Both user topics and idle talk topics are treated the same way
+    chatStore.onAssistantResponseEnd(async (fullText: string) => {
+      console.info('[IdleTalk] Assistant response ended, storing response for continuation')
+
+      // Store the assistant's response for topic continuation
+      lastResponse.value = fullText
+      console.info(`[IdleTalk] Stored response: ${fullText.substring(0, 50)}...`)
+
+      // Reset timer with context preservation
+      // Whether it was user input or idle talk doesn't matter - we continue the topic
+      resetIdleTimer(false)
+    }, { persistent: true })
 
     console.info('[IdleTalk] Idle talk monitoring started')
   }

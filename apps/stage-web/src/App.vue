@@ -89,39 +89,52 @@ onMounted(async () => {
   // Configure LLM provider if environment variables are set
   console.info('[App.vue] LLM config:', { llmProvider, hasApiKey: !!llmApiKey, llmModel })
   if (llmProvider && llmApiKey) {
+    // Force override localStorage values with environment variables
+    // This ensures env vars always take precedence over cached values
+    localStorage.setItem('settings/consciousness/active-provider', llmProvider)
+    if (llmModel) {
+      localStorage.setItem('settings/consciousness/active-model', llmModel)
+    }
+
     providersStore.providers[llmProvider] = {
       ...providersStore.providers[llmProvider],
       apiKey: llmApiKey,
       baseUrl: llmBaseUrl,
     }
+
+    // Set store values (useLocalStorage will sync from localStorage)
     consciousnessStore.activeProvider = llmProvider
     consciousnessStore.activeModel = llmModel
 
-    // Wait a bit for Pinia persistence to sync
-    await new Promise(resolve => setTimeout(resolve, 100))
-
-    console.info('[App.vue] LLM provider configured:', {
+    console.info('[App.vue] LLM provider configured from env:', {
       activeProvider: consciousnessStore.activeProvider,
       activeModel: consciousnessStore.activeModel,
     })
-
-    // Force set again to ensure it's persisted
-    if (!consciousnessStore.activeModel) {
-      console.warn('[App.vue] activeModel was cleared, setting again')
-      consciousnessStore.activeModel = llmModel
-    }
   }
   else {
     console.warn('[App.vue] LLM provider NOT configured - missing environment variables')
   }
 
   // Configure TTS provider if environment variables are set
+  console.info('[App.vue] TTS config:', { ttsProvider, hasApiKey: !!ttsApiKey, ttsModel, ttsVoiceId })
   if (ttsProvider && ttsApiKey) {
+    // Force override localStorage values with environment variables
+    // This ensures env vars always take precedence over cached values
+    localStorage.setItem('settings/speech/active-provider', ttsProvider)
+    if (ttsModel) {
+      localStorage.setItem('settings/speech/active-model', ttsModel)
+    }
+    if (ttsVoiceId) {
+      localStorage.setItem('settings/speech/voice', ttsVoiceId)
+    }
+
     providersStore.providers[ttsProvider] = {
       ...providersStore.providers[ttsProvider],
       apiKey: ttsApiKey,
       baseUrl: ttsBaseUrl,
     }
+
+    // Set store values (useLocalStorage will sync from localStorage)
     speechStore.activeSpeechProvider = ttsProvider
     speechStore.activeSpeechModel = ttsModel
 
@@ -143,6 +156,15 @@ onMounted(async () => {
       // Now set the voice ID - the watcher will find it in availableVoices
       speechStore.activeSpeechVoiceId = ttsVoiceId
     }
+
+    console.info('[App.vue] TTS provider configured from env:', {
+      activeProvider: speechStore.activeSpeechProvider,
+      activeModel: speechStore.activeSpeechModel,
+      activeVoiceId: speechStore.activeSpeechVoiceId,
+    })
+  }
+  else {
+    console.warn('[App.vue] TTS provider NOT configured - missing environment variables')
   }
 
   // Configure character from environment variables
