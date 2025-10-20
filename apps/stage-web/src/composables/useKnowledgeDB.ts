@@ -112,13 +112,14 @@ export function useKnowledgeDB() {
   /**
    * Get random topics from knowledge database (for idle talk feature)
    *
-   * @param options - Optional parameters (limit, source)
+   * @param options - Optional parameters (limit, source, excludeIds)
    * @param options.limit - Maximum number of random posts to return
    * @param options.source - Filter by source (e.g., 'discord', 'twitter')
+   * @param options.excludeIds - Array of post IDs to exclude from results
    * @returns Promise with random posts (without similarity scores)
    */
   async function getRandomTopic(
-    options?: { limit?: number, source?: string },
+    options?: { limit?: number, source?: string, excludeIds?: string[] },
   ): Promise<Omit<KnowledgeResult, 'similarity'>[] | null> {
     // Skip if knowledge DB is disabled
     if (!config.enabled) {
@@ -139,7 +140,11 @@ export function useKnowledgeDB() {
         url.searchParams.set('source', options.source)
       }
 
-      console.info(`[useKnowledgeDB] Fetching ${limit} random topics`)
+      if (options?.excludeIds && options.excludeIds.length > 0) {
+        url.searchParams.set('excludeIds', options.excludeIds.join(','))
+      }
+
+      console.info(`[useKnowledgeDB] Fetching ${limit} random topics${options?.excludeIds ? ` (excluding ${options.excludeIds.length} IDs)` : ''}`)
 
       const response = await fetch(url.toString())
 

@@ -1,6 +1,10 @@
+import type { QueuedMessage } from './useMessageQueue'
+
 import { Client as AiriClient } from '@proj-airi/server-sdk'
 import { useChatStore } from '@proj-airi/stage-ui/stores/chat'
 import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
+
+import { useMessageQueue } from './useMessageQueue'
 
 // Global singleton instance
 let airiClientInstance: AiriClient | null = null
@@ -36,6 +40,64 @@ export function useWebSocketClient() {
 
   console.info('[WebSocket] Stores initialized')
 
+  // Initialize message queue system
+  const messageQueue = useMessageQueue()
+
+  /**
+   * Process a message and generate AI response
+   * Extracted as a separate function to be reused by queue system
+   */
+  async function processMessage(message: QueuedMessage) {
+    const { text } = message
+
+    try {
+      // Get LLM provider and model from environment variables
+      const llmProvider = import.meta.env.VITE_LLM_PROVIDER
+      const llmModel = import.meta.env.VITE_LLM_MODEL
+
+      if (!llmProvider || !llmModel) {
+        console.warn('[WebSocket] No LLM provider or model configured in environment variables, skipping auto-response')
+        console.warn('[WebSocket] Set VITE_LLM_PROVIDER and VITE_LLM_MODEL in .env file')
+        return
+      }
+
+      console.info('[WebSocket] Using provider:', llmProvider, 'model:', llmModel)
+
+      // Get the provider instance
+      const providerInstance = await providersStore.getProviderInstance(llmProvider)
+      if (!providerInstance) {
+        console.error('[WebSocket] Failed to get provider instance for:', llmProvider)
+        return
+      }
+
+      // Ensure the provider is a ChatProvider
+      if (!('chat' in providerInstance)) {
+        console.error('[WebSocket] Provider is not a ChatProvider:', llmProvider)
+        return
+      }
+
+      const providerConfig = providersStore.getProviderConfig(llmProvider)
+
+      // Trigger AI response generation
+      await chatStore.send(text, {
+        model: llmModel,
+        chatProvider: providerInstance,
+        providerConfig,
+      })
+
+      console.info('[WebSocket] AI response generated successfully')
+    }
+    catch (error) {
+      console.error('[WebSocket] Error processing message:', error)
+    }
+  }
+
+  // Setup watch for speech end to process queued messages
+  if (autoResponseEnabled) {
+    messageQueue.watchSpeechEnd(processMessage)
+    console.info('[WebSocket] Message queue watching for speech end')
+  }
+
   // Receive text input from YouTube/Discord/Telegram (user comments)
   airiClient.onEvent('input:text', async (event) => {
     const { text, author, source } = event.data
@@ -43,7 +105,7 @@ export function useWebSocketClient() {
     console.info('[WebSocket] Received input:text event:', { text, author, source })
 
     try {
-      // Add user message to chat store with author information
+      // Always add user message to chat store with author information
       chatStore.messages.push({
         role: 'user',
         content: text,
@@ -53,43 +115,24 @@ export function useWebSocketClient() {
 
       // Automatically generate AI response if enabled
       if (autoResponseEnabled) {
-        console.info('[WebSocket] Auto-response enabled, generating AI response...')
+        console.info('[WebSocket] Auto-response enabled')
 
-        // Get LLM provider and model from environment variables
-        const llmProvider = import.meta.env.VITE_LLM_PROVIDER
-        const llmModel = import.meta.env.VITE_LLM_MODEL
-
-        if (!llmProvider || !llmModel) {
-          console.warn('[WebSocket] No LLM provider or model configured in environment variables, skipping auto-response')
-          console.warn('[WebSocket] Set VITE_LLM_PROVIDER and VITE_LLM_MODEL in .env file')
-          return
+        // Check if we should queue this message
+        if (messageQueue.shouldQueue()) {
+          console.info('[WebSocket] Character is speaking or processing, queueing message')
+          messageQueue.enqueue({ text, author, source })
         }
-
-        console.info('[WebSocket] Using provider:', llmProvider, 'model:', llmModel)
-
-        // Get the provider instance
-        const providerInstance = await providersStore.getProviderInstance(llmProvider)
-        if (!providerInstance) {
-          console.error('[WebSocket] Failed to get provider instance for:', llmProvider)
-          return
+        else {
+          // Process immediately if not speaking
+          console.info('[WebSocket] Processing message immediately')
+          messageQueue.startProcessing()
+          try {
+            await processMessage({ text, author, source, timestamp: Date.now() })
+          }
+          finally {
+            messageQueue.endProcessing()
+          }
         }
-
-        // Ensure the provider is a ChatProvider
-        if (!('chat' in providerInstance)) {
-          console.error('[WebSocket] Provider is not a ChatProvider:', llmProvider)
-          return
-        }
-
-        const providerConfig = providersStore.getProviderConfig(llmProvider)
-
-        // Trigger AI response generation
-        await chatStore.send(text, {
-          model: llmModel,
-          chatProvider: providerInstance,
-          providerConfig,
-        })
-
-        console.info('[WebSocket] AI response generated successfully')
       }
     }
     catch (error) {

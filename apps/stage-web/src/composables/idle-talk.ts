@@ -18,6 +18,7 @@
 
 import type { ChatProvider } from '@xsai-ext/shared-providers'
 
+import { useSpeakingStore } from '@proj-airi/stage-ui/stores/audio'
 import { useChatStore } from '@proj-airi/stage-ui/stores/chat'
 import { useConsciousnessStore } from '@proj-airi/stage-ui/stores/modules/consciousness'
 import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
@@ -32,6 +33,8 @@ export interface IdleTalkConfig {
   minSimilarity: number // 0-1
   continueContext: boolean // whether to continue previous topic
   maxContextContinuation: number // maximum number of times to continue the same topic
+  topicHistorySize: number // number of recent topics to remember and exclude
+  fetchLimit: number // number of random topics to fetch from Knowledge DB
 }
 
 /**
@@ -52,6 +55,7 @@ export function useIdleTalk(config: IdleTalkConfig) {
   const lastResponse = ref<string | null>(null) // Store last AI response for context continuation
   const initialTopic = ref<string | null>(null) // Store initial topic to detect drift
   const contextContinuationCount = ref(0) // Track how many times we've continued the same topic
+  const recentTopicIds = ref<string[]>([]) // Track recently used topic IDs to avoid repetition
 
   /**
    * Reset idle timer
@@ -104,6 +108,15 @@ export function useIdleTalk(config: IdleTalkConfig) {
 
     if (!isEnabled.value || isCurrentlyIdleTalking.value) {
       console.warn(`[IdleTalk] Skipping idle timeout: isEnabled=${isEnabled.value}, isCurrentlyIdleTalking=${isCurrentlyIdleTalking.value}`)
+      return
+    }
+
+    // Check if character is currently speaking
+    const speakingStore = useSpeakingStore()
+    if (speakingStore.nowSpeaking) {
+      console.info('[IdleTalk] Character is currently speaking, deferring idle talk')
+      // Restart timer to check again later
+      resetIdleTimer(false)
       return
     }
 
@@ -245,6 +258,7 @@ export function useIdleTalk(config: IdleTalkConfig) {
   /**
    * Get random topic from knowledge database
    * Used when there's no current topic context
+   * Automatically excludes recently used topics to prevent repetition
    */
   async function getRandomTopic() {
     if (!knowledgeDB.config.enabled) {
@@ -253,10 +267,26 @@ export function useIdleTalk(config: IdleTalkConfig) {
     }
 
     try {
-      // Get 5 random topics and pick one randomly (for diversity)
-      const topics = await knowledgeDB.getRandomTopic({ limit: 5 })
+      // Get topics from Knowledge DB with exclusions
+      const topics = await knowledgeDB.getRandomTopic({
+        limit: config.fetchLimit,
+        excludeIds: recentTopicIds.value,
+      })
 
       if (!topics || topics.length === 0) {
+        // If no topics available (all excluded), clear history and try again
+        if (recentTopicIds.value.length > 0) {
+          console.warn('[IdleTalk] No topics available after exclusions, clearing history')
+          recentTopicIds.value = []
+          const retryTopics = await knowledgeDB.getRandomTopic({ limit: config.fetchLimit })
+          if (!retryTopics || retryTopics.length === 0) {
+            return null
+          }
+          const selectedTopic = retryTopics[Math.floor(Math.random() * retryTopics.length)]
+          addTopicToHistory(selectedTopic.id)
+          console.info(`[IdleTalk] Selected random topic from ${selectedTopic.author}: ${selectedTopic.content.substring(0, 50)}...`)
+          return selectedTopic
+        }
         return null
       }
 
@@ -264,13 +294,27 @@ export function useIdleTalk(config: IdleTalkConfig) {
       const randomIndex = Math.floor(Math.random() * topics.length)
       const selectedTopic = topics[randomIndex]
 
+      // Add to history to avoid repeating
+      addTopicToHistory(selectedTopic.id)
+
       console.info(`[IdleTalk] Selected random topic from ${selectedTopic.author}: ${selectedTopic.content.substring(0, 50)}...`)
+      console.info(`[IdleTalk] Topic history (${recentTopicIds.value.length}/${config.topicHistorySize}): ${recentTopicIds.value.join(', ')}`)
 
       return selectedTopic
     }
     catch (error) {
       console.error('[IdleTalk] Error fetching random topic:', error)
       return null
+    }
+  }
+
+  /**
+   * Add topic ID to history and maintain size limit
+   */
+  function addTopicToHistory(topicId: string) {
+    recentTopicIds.value.push(topicId)
+    if (recentTopicIds.value.length > config.topicHistorySize) {
+      recentTopicIds.value.shift() // Remove oldest
     }
   }
 
