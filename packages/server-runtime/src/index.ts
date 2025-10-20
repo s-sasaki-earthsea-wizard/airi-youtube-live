@@ -63,6 +63,8 @@ function main() {
 
   app.get('/ws', defineWebSocketHandler({
     open: (peer) => {
+      console.info('[DEBUG] WebSocket connection opened:', { peerId: peer.id })
+
       if (AUTH_TOKEN) {
         peers.set(peer.id, { peer, authenticated: false, name: '' })
       }
@@ -71,6 +73,7 @@ function main() {
         peers.set(peer.id, { peer, authenticated: true, name: '' })
       }
 
+      console.info('[DEBUG] Peer registered:', { peerId: peer.id, authenticated: !AUTH_TOKEN, totalPeers: peers.size })
       websocketLogger.withFields({ peer: peer.id, activePeers: peers.size }).log('connected')
     },
     message: (peer, message) => {
@@ -83,6 +86,10 @@ function main() {
         send(peer, { type: 'error', data: { message: `invalid JSON, error: ${errorMessage}` } })
         return
       }
+
+      // DEBUG: Log all received messages
+      console.info('[DEBUG] Received message:', { peer: peer.id, eventType: event.type })
+      websocketLogger.withFields({ peer: peer.id, eventType: event.type }).log('received message')
 
       switch (event.type) {
         case 'module:authenticate': {
@@ -154,6 +161,14 @@ function main() {
 
       // default case
       const p = peers.get(peer.id)
+      // DEBUG: Log authentication status
+      websocketLogger.withFields({
+        peer: peer.id,
+        authenticated: p?.authenticated,
+        peerExists: !!p,
+        eventType: event.type,
+      }).log('default case - auth check')
+
       if (!p?.authenticated) {
         websocketLogger.withFields({ peer: peer.id }).debug('not authenticated')
         peer.send(RESPONSES.notAuthenticated)
@@ -161,10 +176,22 @@ function main() {
       }
 
       const payload = JSON.stringify(event)
+      // DEBUG: Log broadcast
+      websocketLogger.withFields({
+        peer: peer.id,
+        totalPeers: peers.size,
+        eventType: event.type,
+      }).log('broadcasting to peers')
+
       for (const [id, other] of peers.entries()) {
         if (id === peer.id)
           continue
         if (other.peer.readyState === WebSocketReadyState.OPEN) {
+          websocketLogger.withFields({
+            from: peer.id,
+            to: id,
+            eventType: event.type,
+          }).log('sending to peer')
           other.peer.send(payload)
         }
         else {
