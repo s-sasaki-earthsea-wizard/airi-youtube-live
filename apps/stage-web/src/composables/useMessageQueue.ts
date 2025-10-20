@@ -6,12 +6,15 @@
  *
  * Features:
  * - Queue messages during speech playback
+ * - Queue messages during idle talk (prevents interruption)
  * - Process queued messages sequentially after speech ends
  * - Prevent message loss while maintaining conversation flow
  */
 
 import { useSpeakingStore } from '@proj-airi/stage-ui/stores/audio'
 import { ref, watch } from 'vue'
+
+import { isCurrentlyIdleTalking } from './idle-talk'
 
 export interface QueuedMessage {
   text: string
@@ -72,16 +75,18 @@ export function useMessageQueue() {
    * Check if should queue message
    * Messages should be queued if:
    * 1. Character is currently speaking, OR
-   * 2. A message is currently being processed
+   * 2. A message is currently being processed, OR
+   * 3. Idle talk is currently in progress
    *
    * @returns True if message should be queued
    */
   function shouldQueue(): boolean {
     const speaking = isSpeaking()
     const processing = isProcessing.value
+    const idleTalking = isCurrentlyIdleTalking.value
 
-    if (speaking || processing) {
-      console.info('[MessageQueue] Should queue:', { speaking, processing })
+    if (speaking || processing || idleTalking) {
+      console.info('[MessageQueue] Should queue:', { speaking, processing, idleTalking })
       return true
     }
 
