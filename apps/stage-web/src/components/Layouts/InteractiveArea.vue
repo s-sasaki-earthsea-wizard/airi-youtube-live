@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { ChatProvider } from '@xsai-ext/shared-providers'
 
+import type { QueuedMessage } from '../../composables/useMessageQueue'
+
 import WhisperWorker from '@proj-airi/stage-ui/libs/workers/worker?worker&url'
 
 import { toWAVBase64 } from '@proj-airi/audio'
@@ -19,6 +21,7 @@ import { useI18n } from 'vue-i18n'
 import ChatHistory from '../Widgets/ChatHistory.vue'
 
 import { useStreamingMode } from '../../composables/streaming-mode'
+import { useMessageQueue } from '../../composables/useMessageQueue'
 
 const messageInput = ref('')
 const listening = ref(false)
@@ -38,6 +41,37 @@ const { audioContext } = useAudioContext()
 const { t } = useI18n()
 
 const isDark = useDark({ disableTransition: false })
+
+// Initialize message queue system
+const messageQueue = useMessageQueue()
+
+/**
+ * Process a message and generate AI response
+ * Extracted as a separate function to be reused by queue system
+ */
+async function processMessage(message: QueuedMessage) {
+  const { text } = message
+
+  try {
+    const providerConfig = providersStore.getProviderConfig(activeProvider.value)
+
+    await send(text, {
+      chatProvider: await providersStore.getProviderInstance(activeProvider.value) as ChatProvider,
+      model: activeModel.value,
+      providerConfig,
+    })
+  }
+  catch (error) {
+    messages.value.pop()
+    messages.value.push({
+      role: 'error',
+      content: (error as Error).message,
+    })
+  }
+}
+
+// Setup watch for speech end to process queued messages
+messageQueue.watchSpeechEnd(processMessage)
 
 const { transcribe: generate, terminate } = useWhisper(WhisperWorker, {
   onComplete: async (res) => {
@@ -60,21 +94,23 @@ async function handleSend() {
     return
   }
 
-  try {
-    const providerConfig = providersStore.getProviderConfig(activeProvider.value)
+  const text = messageInput.value
 
-    await send(messageInput.value, {
-      chatProvider: await providersStore.getProviderInstance(activeProvider.value) as ChatProvider,
-      model: activeModel.value,
-      providerConfig,
-    })
+  // Check if we should queue this message
+  if (messageQueue.shouldQueue()) {
+    console.info('[ChatInput] Character is speaking or processing, queueing message')
+    messageQueue.enqueue({ text })
   }
-  catch (error) {
-    messages.value.pop()
-    messages.value.push({
-      role: 'error',
-      content: (error as Error).message,
-    })
+  else {
+    // Process immediately if not speaking
+    console.info('[ChatInput] Processing message immediately')
+    messageQueue.startProcessing()
+    try {
+      await processMessage({ text, timestamp: Date.now() })
+    }
+    finally {
+      messageQueue.endProcessing()
+    }
   }
 }
 
