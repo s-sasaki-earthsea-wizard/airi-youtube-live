@@ -57,6 +57,11 @@ export class Client<C = undefined> {
       }
     })
 
+    // Announce confirmation listener
+    this.onEvent('module:announced', (event) => {
+      console.info('[WebSocket] Module announced successfully:', event.data)
+    })
+
     if (this.opts.autoConnect) {
       void this.connect()
     }

@@ -2,10 +2,11 @@ import type { WebSocketEvent } from '@proj-airi/server-shared/types'
 
 import type { AuthenticatedPeer, Peer } from './types'
 
-import { env } from 'node:process'
+import { argv, env } from 'node:process'
 
 import { Format, LogLevel, setGlobalFormat, setGlobalLogLevel, useLogg } from '@guiiai/logg'
-import { defineWebSocketHandler, H3 } from 'h3'
+import { plugin as ws } from 'crossws/server'
+import { defineWebSocketHandler, H3, serve } from 'h3'
 
 import { WebSocketReadyState } from './types'
 
@@ -27,12 +28,18 @@ function send(peer: Peer, event: WebSocketEvent<Record<string, unknown>> | strin
 }
 
 function main() {
+  console.info('[DEBUG] main() function called')
   const appLogger = useLogg('App').useGlobalConfig()
   const websocketLogger = useLogg('WebSocket').useGlobalConfig()
+  console.info('[DEBUG] Loggers initialized')
 
   const app = new H3({
-    onError: error => appLogger.withError(error).error('an error occurred'),
+    onError: (error) => {
+      console.error('[DEBUG] H3 onError:', error)
+      appLogger.withError(error).error('an error occurred')
+    },
   })
+  console.info('[DEBUG] H3 app created')
 
   const peers = new Map<string, AuthenticatedPeer>()
   const peersByModule = new Map<string, Map<number | undefined, AuthenticatedPeer>>()
@@ -60,6 +67,9 @@ function main() {
       }
     }
   }
+
+  // Test endpoint
+  app.get('/test', () => ({ message: 'AIRI Server is running', timestamp: new Date().toISOString() }))
 
   app.get('/ws', defineWebSocketHandler({
     open: (peer) => {
@@ -127,6 +137,10 @@ function main() {
             }
             Object.assign(p, { name, index })
             registerModulePeer(p, p.name, p.index)
+
+            // Send acknowledgment to client
+            send(peer, { type: 'module:announced', data: { name, index } })
+            websocketLogger.withFields({ peer: peer.id, name, index }).log('module announced')
           }
           return
         }
@@ -216,4 +230,19 @@ function main() {
   return app
 }
 
+// Create single app instance
 export const app = main()
+
+// Start server only if this file is run directly (not imported)
+if (import.meta.url === `file://${argv[1]}`) {
+  const port = Number.parseInt(env.PORT || '6121', 10)
+
+  console.info(`[AIRI Server] Starting server on port ${port}...`)
+  serve(app, {
+    port,
+    plugins: [ws({
+      resolve: async req => (await app.fetch(req)).crossws,
+    })],
+  })
+  console.info(`[AIRI Server] Server is ready at http://localhost:${port}`)
+}

@@ -52,6 +52,10 @@ export interface WebSocketEvents<C = undefined> {
     name: string
     possibleEvents: Array<(keyof WebSocketEvents<C>)>
   }
+  'module:announced': {
+    name: string
+    index?: number
+  }
   'module:configure': {
     config: C
   }
