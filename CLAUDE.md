@@ -75,6 +75,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - [2025-10-16: TTS Voice Configuration Fix](./.claude-notes/sessions/2025-10-16-tts-voice-fix.md) - 環境変数からのTTS設定読み込みバグ修正
 - [2025-10-17: YouTube Streaming Mode UI](./.claude-notes/sessions/2025-10-17-streaming-mode-ui.md) - YouTube配信向けUIカスタマイズ機能の実装
 - [2025-10-17: Idle Talk with Knowledge DB](./.claude-notes/sessions/2025-10-17-idle-talk.md) - アイドル状態でのランダム話題会話機能の実装
+- [2025-10-20: Topic Continuation Unification](./.claude-notes/sessions/2025-10-20-topic-continuation.md) - トピック継続ロジックの共通化とチャット継続機能の実装
 
 ## 将来の拡張計画
 
@@ -121,9 +122,16 @@ Claude Codeを使ってこのプロジェクトに貢献する場合：
 
 - ✅ **YouTube配信向けUIカスタマイズ** - ヘッダー、チャット応答、入力欄の表示切替
 - ✅ **Knowledge DB統合** - RAGによる文脈に応じた知識の提供
-- ✅ **Idle Talk機能** - アイドル状態でのランダム話題会話（Phase 1完了）
+- ✅ **トピック継続機能** - ユーザーチャットとアイドルトークの統一的な会話継続
+  - `useTopicContinuation` composableによる共通ロジック
+  - チャット入力からの自動継続（デフォルト: 3回）
+  - Knowledge DBからの関連知識統合
+  - 継続プロンプトのUI非表示（`_hideInUI`フラグ）
+  - 環境変数での個別制御（`VITE_CHAT_CONTINUATION_ENABLED`, `VITE_CHAT_MAX_CONTINUATION`）
+- ✅ **Idle Talk機能** - アイドル状態でのランダム話題会話
   - タイマーベースのアイドル検知
   - Knowledge DBからのランダム話題取得
+  - トピック継続composableを使用したリファクタリング
   - LLM応答生成とTTS音声再生
   - 環境変数でのON/OFF制御
 
@@ -136,5 +144,5 @@ Claude Codeを使ってこのプロジェクトに貢献する場合：
 
 ---
 
-**最終更新**: 2025-10-17
+**最終更新**: 2025-10-20
 **Claude Code バージョン**: Sonnet 4.5 (claude-sonnet-4-5-20250929)

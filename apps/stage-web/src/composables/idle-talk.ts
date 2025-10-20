@@ -25,6 +25,7 @@ import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
 import { ref } from 'vue'
 
 import { useKnowledgeDB } from './useKnowledgeDB'
+import { useTopicContinuation } from './useTopicContinuation'
 
 export interface IdleTalkConfig {
   enabled: boolean
@@ -49,12 +50,15 @@ export function useIdleTalk(config: IdleTalkConfig) {
   const providersStore = useProvidersStore()
   const knowledgeDB = useKnowledgeDB()
 
+  // Initialize topic continuation composable
+  const topicContinuation = useTopicContinuation({
+    maxContinuation: config.maxContextContinuation,
+    enabled: config.continueContext,
+  })
+
   const isEnabled = ref(config.enabled)
   const lastInteractionTime = ref(Date.now())
   const idleTimerId = ref<number | null>(null)
-  const lastResponse = ref<string | null>(null) // Store last AI response for context continuation
-  const initialTopic = ref<string | null>(null) // Store initial topic to detect drift
-  const contextContinuationCount = ref(0) // Track how many times we've continued the same topic
   const recentTopicIds = ref<string[]>([]) // Track recently used topic IDs to avoid repetition
 
   /**
@@ -66,9 +70,7 @@ export function useIdleTalk(config: IdleTalkConfig) {
 
     // Clear context when starting a new topic
     if (clearContext) {
-      lastResponse.value = null
-      initialTopic.value = null
-      contextContinuationCount.value = 0
+      topicContinuation.resetContext()
       console.info('[IdleTalk] Context cleared, starting new topic')
     }
 
@@ -289,51 +291,14 @@ export function useIdleTalk(config: IdleTalkConfig) {
    */
   async function buildIdleTalkPrompt(): Promise<string | null> {
     // Check if we should continue from previous response
-    if (config.continueContext
-      && lastResponse.value
-      && contextContinuationCount.value < config.maxContextContinuation) {
-      console.info('[IdleTalk] Building continuation prompt')
-      console.info(`[IdleTalk] Continuation count: ${contextContinuationCount.value + 1}/${config.maxContextContinuation}`)
-      console.info(`[IdleTalk] Previous response: ${lastResponse.value.substring(0, 50)}...`)
-
-      // Search for related knowledge to enrich the continuation
-      let relatedKnowledge = ''
-      try {
-        const relatedResults = await knowledgeDB.queryKnowledge(lastResponse.value, {
-          limit: 3,
-          threshold: 0.6,
-        })
-
-        if (relatedResults && relatedResults.results.length > 0) {
-          console.info(`[IdleTalk] Found ${relatedResults.results.length} related knowledge items`)
-          relatedKnowledge = `\n【あなたの関連する過去の発言】\n${
-            relatedResults.results
-              .map(k => `- ${k.content.substring(0, 100)}${k.content.length > 100 ? '...' : ''}`)
-              .join('\n')
-          }\n`
-        }
-      }
-      catch (error) {
-        console.warn('[IdleTalk] Failed to fetch related knowledge, continuing without it', error)
-      }
-
-      // Increment continuation counter
-      contextContinuationCount.value++
-
-      return `前回あなたはこう話しました：
-「${lastResponse.value}」
-${relatedKnowledge}
-この話題について、さらに深掘りして200文字程度で話してください。
-自然な会話の流れで、関連する思い出や考えを加えてください。
-「さっきの話の続きだけど」のような前置きは不要です。直接内容に入ってください。`
+    if (topicContinuation.shouldContinue()) {
+      return await topicContinuation.buildContinuationPrompt()
     }
 
     // Reset context when max continuation is reached
-    if (contextContinuationCount.value >= config.maxContextContinuation) {
+    if (topicContinuation.isMaxReached()) {
       console.info('[IdleTalk] Max context continuation reached, resetting to new topic')
-      lastResponse.value = null
-      initialTopic.value = null
-      contextContinuationCount.value = 0
+      topicContinuation.resetContext()
     }
 
     // Start with a new random topic
@@ -343,9 +308,8 @@ ${relatedKnowledge}
       return null
     }
 
-    // Store initial topic for drift detection (future use)
-    initialTopic.value = topic.content
-    contextContinuationCount.value = 0
+    // Store initial topic
+    topicContinuation.storeResponse(topic.content, true)
 
     return `コメントが無いので、以下の話題をテーマに自由にリスナーに対して話してください：
 
@@ -386,9 +350,7 @@ ${relatedKnowledge}
       }
 
       // Clear previous topic context when user sends a new message
-      lastResponse.value = null
-      initialTopic.value = null
-      contextContinuationCount.value = 0
+      topicContinuation.resetContext()
       console.info('[IdleTalk] User input detected, cleared previous topic context')
     }, { persistent: true })
 
@@ -399,8 +361,7 @@ ${relatedKnowledge}
       console.info('[IdleTalk] Assistant response ended, storing response for continuation')
 
       // Store the assistant's response for topic continuation
-      lastResponse.value = fullText
-      console.info(`[IdleTalk] Stored response: ${fullText.substring(0, 50)}...`)
+      topicContinuation.storeResponse(fullText)
 
       // Reset timer with context preservation
       // Whether it was user input or idle talk doesn't matter - we continue the topic

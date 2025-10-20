@@ -20,8 +20,10 @@ import ActionAbout from './InteractiveArea/Actions/About.vue'
 import ActionViewControls from './InteractiveArea/Actions/ViewControls.vue'
 import ViewControlInputs from './ViewControls/Inputs.vue'
 
+import { isCurrentlyIdleTalking } from '../../composables/idle-talk'
 import { useStreamingMode } from '../../composables/streaming-mode'
 import { useMessageQueue } from '../../composables/useMessageQueue'
+import { useTopicContinuation } from '../../composables/useTopicContinuation'
 
 const isDark = useDark({ disableTransition: false })
 const streamingMode = useStreamingMode()
@@ -42,12 +44,21 @@ useResizeObserver(document.documentElement, () => screenSafeArea.update())
 // const { askPermission } = useSettingsAudioDevice()
 const { themeColorsHueDynamic, stageViewControlsEnabled } = storeToRefs(useSettings())
 const { enabled, selectedAudioInput } = storeToRefs(useSettingsAudioDevice())
-const { send, onAfterMessageComposed, discoverToolsCompatibility, cleanupMessages } = useChatStore()
+const chatStore = useChatStore()
+const { send, onAfterMessageComposed, onAssistantResponseEnd, discoverToolsCompatibility, cleanupMessages } = chatStore
 const { messages } = storeToRefs(useChatStore())
 const { t } = useI18n()
 
 // Initialize message queue system
 const messageQueue = useMessageQueue()
+
+// Initialize topic continuation for chat inputs
+const chatContinuationEnabled = import.meta.env.VITE_CHAT_CONTINUATION_ENABLED === 'true'
+const chatMaxContinuation = Number.parseInt(import.meta.env.VITE_CHAT_MAX_CONTINUATION || '3', 10)
+const topicContinuation = useTopicContinuation({
+  maxContinuation: chatMaxContinuation,
+  enabled: chatContinuationEnabled,
+})
 
 /**
  * Process a message and generate AI response
@@ -162,6 +173,69 @@ watch([activeProvider, activeModel], async () => {
 onMounted(() => {
   start()
   screenSafeArea.update()
+
+  // Register hook for chat topic continuation
+  onAssistantResponseEnd(async (fullText: string) => {
+    // Skip if idle talk is in progress (idle talk has its own continuation logic)
+    if (isCurrentlyIdleTalking.value) {
+      console.info('[ChatContinuation] Skipping continuation (idle talk in progress)')
+      return
+    }
+
+    console.info('[ChatContinuation] Assistant response ended, checking if continuation is needed')
+
+    // Store the assistant's response
+    topicContinuation.storeResponse(fullText)
+
+    // Check if we should continue the topic
+    if (!topicContinuation.shouldContinue()) {
+      console.info('[ChatContinuation] No continuation needed')
+      if (topicContinuation.isMaxReached()) {
+        console.info('[ChatContinuation] Max continuation reached, resetting context')
+        topicContinuation.resetContext()
+      }
+      return
+    }
+
+    console.info('[ChatContinuation] Building continuation prompt and adding to queue')
+
+    try {
+      // Build continuation prompt
+      const continuationPrompt = await topicContinuation.buildContinuationPrompt()
+
+      // Record the current chat history length before sending
+      const initialHistoryLength = chatStore.messages.length
+      console.info(`[ChatContinuation] Initial chat history length: ${initialHistoryLength}`)
+
+      // Set up a one-time hook to mark the prompt message as hidden in UI
+      let hookExecuted = false
+      const hidePromptHook = async () => {
+        if (hookExecuted)
+          return
+
+        // Find the user message we just added and mark it as hidden in UI
+        const userMessageIndex = chatStore.messages.findLastIndex(msg => msg.role === 'user')
+        if (userMessageIndex !== -1 && userMessageIndex >= initialHistoryLength) {
+          // Add _hideInUI flag to hide this continuation prompt from UI
+          (chatStore.messages[userMessageIndex] as any)._hideInUI = true
+          console.info(`[ChatContinuation] Marked continuation prompt as hidden in UI at index ${userMessageIndex}`)
+        }
+
+        hookExecuted = true
+      }
+
+      // Register the hook before adding to queue
+      onAfterMessageComposed(hidePromptHook)
+
+      // Add continuation prompt to message queue
+      // It will be processed after current TTS completes
+      messageQueue.enqueue({ text: continuationPrompt })
+      console.info('[ChatContinuation] Continuation prompt added to queue')
+    }
+    catch (error) {
+      console.error('[ChatContinuation] Failed to build continuation prompt:', error)
+    }
+  }, { persistent: true })
 })
 </script>
 
