@@ -34,6 +34,35 @@ export function useTopicContinuation(config: TopicContinuationConfig) {
   const lastResponse = ref<string | null>(null)
   const initialTopic = ref<string | null>(null)
   const contextContinuationCount = ref(0)
+  const instructionText = ref<string | null>(null)
+
+  /**
+   * Load instruction text from file
+   * Loads once and caches the result
+   */
+  async function loadInstructionText(): Promise<string> {
+    // Return cached version if already loaded
+    if (instructionText.value !== null) {
+      return instructionText.value
+    }
+
+    try {
+      const response = await fetch('/prompts/topic-continuation-instruction.md')
+      if (!response.ok) {
+        throw new Error(`Failed to load topic continuation instruction: ${response.status}`)
+      }
+      const text = await response.text()
+      instructionText.value = text
+      return text
+    }
+    catch (err) {
+      console.warn('[TopicContinuation] Failed to load instruction file, using default', err)
+      // Fallback to simple default instruction
+      const defaultInstruction = '以下はこの話題に関連するあなたの過去の発言です。これらを参考にして会話してください。'
+      instructionText.value = defaultInstruction
+      return defaultInstruction
+    }
+  }
 
   /**
    * Check if we should continue the current topic
@@ -67,10 +96,10 @@ export function useTopicContinuation(config: TopicContinuationConfig) {
 
       if (relatedResults && relatedResults.results.length > 0) {
         console.info(`[TopicContinuation] Found ${relatedResults.results.length} related knowledge items`)
-        relatedKnowledge = `\n【あなたの関連する過去の発言】\n${
-          relatedResults.results
-            .map(k => `- ${k.content.substring(0, 100)}${k.content.length > 100 ? '...' : ''}`)
-            .join('\n')
+        const instruction = await loadInstructionText()
+        relatedKnowledge = `\n${instruction}\n\n${relatedResults.results
+          .map(k => `- ${k.content.substring(0, 100)}${k.content.length > 100 ? '...' : ''}`)
+          .join('\n')
         }\n`
       }
     }

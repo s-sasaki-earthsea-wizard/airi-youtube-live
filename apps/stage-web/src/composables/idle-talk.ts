@@ -60,6 +60,35 @@ export function useIdleTalk(config: IdleTalkConfig) {
   const lastInteractionTime = ref(Date.now())
   const idleTimerId = ref<number | null>(null)
   const recentTopicIds = ref<string[]>([]) // Track recently used topic IDs to avoid repetition
+  const initialTopicInstruction = ref<string | null>(null) // Cache for initial topic instruction
+
+  /**
+   * Load initial topic instruction from file
+   * Loads once and caches the result
+   */
+  async function loadInitialTopicInstruction(): Promise<string> {
+    // Return cached version if already loaded
+    if (initialTopicInstruction.value !== null) {
+      return initialTopicInstruction.value
+    }
+
+    try {
+      const response = await fetch('/prompts/idle-talk-initial-topic.md')
+      if (!response.ok) {
+        throw new Error(`Failed to load idle talk instruction: ${response.status}`)
+      }
+      const text = await response.text()
+      initialTopicInstruction.value = text
+      return text
+    }
+    catch (err) {
+      console.warn('[IdleTalk] Failed to load instruction file, using default', err)
+      // Fallback to simple default instruction
+      const defaultInstruction = '以下の話題について話してください。'
+      initialTopicInstruction.value = defaultInstruction
+      return defaultInstruction
+    }
+  }
 
   /**
    * Reset idle timer
@@ -311,13 +340,14 @@ export function useIdleTalk(config: IdleTalkConfig) {
     // Store initial topic
     topicContinuation.storeResponse(topic.content, true)
 
-    return `コメントが無いので、以下の話題をテーマに自由にリスナーに対して話してください：
+    // Load instruction from file
+    const instruction = await loadInitialTopicInstruction()
+
+    return `コメントが無いので、以下の話題をテーマに話してください：
 
 話題: ${topic.content}
 
-この話題について、あなたの考えや思い出を200文字程度で話してください。
-話し始める前に雑談を始める前にふさわしい前置きをつけてください。
-ただし、リスナーへの挨拶等は不要です`
+${instruction}`
   }
 
   /**

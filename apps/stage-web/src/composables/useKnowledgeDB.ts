@@ -46,6 +46,35 @@ export function useKnowledgeDB() {
   const config = getKnowledgeDBConfig()
   const isLoading = ref(false)
   const error = ref<Error | null>(null)
+  const instructionText = ref<string | null>(null)
+
+  /**
+   * Load instruction text from file
+   * Loads once and caches the result
+   */
+  async function loadInstructionText(): Promise<string> {
+    // Return cached version if already loaded
+    if (instructionText.value !== null) {
+      return instructionText.value
+    }
+
+    try {
+      const response = await fetch('/prompts/knowledge-db-instruction.md')
+      if (!response.ok) {
+        throw new Error(`Failed to load knowledge DB instruction: ${response.status}`)
+      }
+      const text = await response.text()
+      instructionText.value = text
+      return text
+    }
+    catch (err) {
+      console.warn('[useKnowledgeDB] Failed to load instruction file, using default', err)
+      // Fallback to simple default instruction
+      const defaultInstruction = '以下はあなたの過去の発言から関連する内容です。これらを参考にして会話してください。'
+      instructionText.value = defaultInstruction
+      return defaultInstruction
+    }
+  }
 
   /**
    * Query the knowledge database for relevant information
@@ -175,7 +204,7 @@ export function useKnowledgeDB() {
    * @param results - Knowledge search results
    * @returns Formatted text for system prompt
    */
-  function formatKnowledgeForPrompt(results: KnowledgeResult[]): string {
+  async function formatKnowledgeForPrompt(results: KnowledgeResult[]): Promise<string> {
     if (results.length === 0) {
       return ''
     }
@@ -187,7 +216,9 @@ export function useKnowledgeDB() {
       })
       .join('\n')
 
-    return `\n\n## 関連する情報（Knowledge Database）\n\n${formattedResults}\n`
+    const instruction = await loadInstructionText()
+
+    return `\n\n${instruction}\n\n${formattedResults}\n`
   }
 
   return {
