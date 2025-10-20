@@ -22,7 +22,7 @@ import { useSpeakingStore } from '@proj-airi/stage-ui/stores/audio'
 import { useChatStore } from '@proj-airi/stage-ui/stores/chat'
 import { useConsciousnessStore } from '@proj-airi/stage-ui/stores/modules/consciousness'
 import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
-import { nextTick, ref } from 'vue'
+import { ref } from 'vue'
 
 import { useKnowledgeDB } from './useKnowledgeDB'
 
@@ -170,25 +170,25 @@ export function useIdleTalk(config: IdleTalkConfig) {
         const initialHistoryLength = chatStore.messages.length
         console.info(`[IdleTalk] Initial chat history length: ${initialHistoryLength}`)
 
-        // Set up a one-time hook to remove the prompt message immediately after it's composed
-        let hookRemoved = false
-        const removePromptHook = async () => {
-          if (hookRemoved)
+        // Set up a one-time hook to mark the prompt message as hidden in UI
+        let hookExecuted = false
+        const hidePromptHook = async () => {
+          if (hookExecuted)
             return
 
-          // Find and remove the user message we just added
-          await nextTick()
+          // Find the user message we just added and mark it as hidden in UI
           const userMessageIndex = chatStore.messages.findLastIndex(msg => msg.role === 'user')
           if (userMessageIndex !== -1 && userMessageIndex >= initialHistoryLength) {
-            chatStore.messages.splice(userMessageIndex, 1)
-            console.info(`[IdleTalk] Removed idle talk prompt immediately at index ${userMessageIndex}`)
+            // Add _hideInUI flag to hide this internal prompt from UI
+            (chatStore.messages[userMessageIndex] as any)._hideInUI = true
+            console.info(`[IdleTalk] Marked idle talk prompt as hidden in UI at index ${userMessageIndex}`)
           }
 
-          hookRemoved = true
+          hookExecuted = true
         }
 
         // Register the hook before sending
-        chatStore.onAfterMessageComposed(removePromptHook)
+        chatStore.onAfterMessageComposed(hidePromptHook)
 
         // Send the topic as a user message
         // This will trigger all the necessary pipelines (TTS, etc.)
@@ -198,43 +198,6 @@ export function useIdleTalk(config: IdleTalkConfig) {
           chatProvider: providerInstance as ChatProvider,
           providerConfig,
         })
-
-        // Wait for the assistant's response to be added to chat history
-        // Poll the chat history until we see the assistant response
-        // Note: We don't look for user message anymore since it was already removed by the hook
-        const maxWaitTime = 30000 // 30 seconds max wait
-        const pollInterval = 100 // Check every 100ms
-        const startTime = Date.now()
-        let assistantResponseFound = false
-
-        while (!assistantResponseFound && Date.now() - startTime < maxWaitTime) {
-          // Check if we have new assistant message
-          // Since we removed the user message immediately, we only expect +1 (assistant)
-          if (chatStore.messages.length > initialHistoryLength) {
-            // Look for the assistant's response
-            const newMessages = chatStore.messages.slice(initialHistoryLength)
-            const hasAssistantResponse = newMessages.some(msg => msg.role === 'assistant')
-
-            if (hasAssistantResponse) {
-              assistantResponseFound = true
-              console.info(`[IdleTalk] Assistant response detected after ${Date.now() - startTime}ms`)
-              break
-            }
-          }
-
-          // Wait before next poll
-          await new Promise(resolve => setTimeout(resolve, pollInterval))
-        }
-
-        if (!assistantResponseFound) {
-          console.warn(`[IdleTalk] Timeout waiting for assistant response after ${maxWaitTime}ms`)
-        }
-
-        console.info(`[IdleTalk] Chat history length: ${chatStore.messages.length}`)
-        console.info(`[IdleTalk] Last 3 messages:`, chatStore.messages.slice(-3).map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content.substring(0, 50) : 'non-string' })))
-
-        // Note: lastResponse will be stored by onAssistantResponseEnd hook
-        // No need to store it here
 
         console.info('[IdleTalk] LLM response generated successfully')
       }

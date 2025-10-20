@@ -37,7 +37,8 @@ onTokenLiteral(async () => {
   <div flex="~ col" rounded="lg" overflow-hidden>
     <div ref="chatHistoryRef" v-auto-animate max-h="35dvh" z-5 flex="~ col" h-full w-full overflow-scroll class="chat-history">
       <div v-for="(message, index) in messages" :key="index" mb-2>
-        <div v-if="message.role === 'error'" flex mr="12">
+        <!-- Skip messages marked as hidden in UI (internal prompts) -->
+        <div v-if="message.role === 'error' && !(message as any)._hideInUI" flex mr="12">
           <div
             flex="~ col"
             shadow="sm violet-200/50 dark:none"
@@ -61,7 +62,7 @@ onTokenLiteral(async () => {
             <div v-else i-eos-icons:three-dots-loading />
           </div>
         </div>
-        <div v-if="message.role === 'assistant'" flex mr="12">
+        <div v-if="message.role === 'assistant' && !(message as any)._hideInUI" flex mr="12">
           <div
             flex="~ col"
             shadow="sm primary-200/50 dark:none"
@@ -82,7 +83,7 @@ onTokenLiteral(async () => {
             <div v-else i-eos-icons:three-dots-loading />
           </div>
         </div>
-        <div v-else-if="message.role === 'user'" flex="~">
+        <div v-else-if="message.role === 'user' && !(message as any)._hideInUI" flex="~">
           <div
             flex="~ col"
             shadow="sm cyan-200/50 dark:none"
