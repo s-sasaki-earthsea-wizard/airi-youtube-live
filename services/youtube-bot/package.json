@@ -15,6 +15,7 @@
   },
   "scripts": {
     "start": "dotenvx run -f .env -f .env.local --overload --ignore=MISSING_ENV_FILE -- tsx src/index.ts",
+    "test-message": "dotenvx run -f .env -f .env.local --overload --ignore=MISSING_ENV_FILE -- tsx src/test-message.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

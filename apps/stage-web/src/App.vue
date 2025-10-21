@@ -20,6 +20,7 @@ import LicenseNotice from './components/LicenseNotice.vue'
 import { useIdleTalk } from './composables/idle-talk'
 import { useKnowledgeDB } from './composables/useKnowledgeDB'
 import { useKnowledgeDBIntegration } from './composables/useKnowledgeDBIntegration'
+import { useWebSocketClient } from './composables/websocket-client'
 import { usePWAStore } from './stores/pwa'
 
 import 'vue-sonner/style.css'
@@ -74,6 +75,12 @@ watch(settings.themeColorsHueDynamic, () => {
 
 // Initialize first-time setup check when app mounts
 onMounted(async () => {
+  // Initialize WebSocket client for YouTube/Discord/Telegram integration
+  console.info('[AIRI] Initializing WebSocket client...')
+  const { airiClient } = useWebSocketClient()
+  console.info('[AIRI] WebSocket client initialized')
+  console.info('[AIRI] WebSocket client instance:', { airiClient })
+
   // Load configuration from environment variables
   const llmProvider = import.meta.env.VITE_LLM_PROVIDER
   const llmApiKey = import.meta.env.VITE_LLM_API_KEY

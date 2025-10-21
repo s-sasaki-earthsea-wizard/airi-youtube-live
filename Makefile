@@ -1,4 +1,4 @@
-.PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube stop stop-all \
+.PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube test-message stop stop-all \
         db-setup db-start db-stop db-restart db-status db-export db-sync-discord db-danger-clear-all \
         collect-discord collect-discord-stop collect-discord-restart
 
@@ -14,7 +14,8 @@ help:
 	@echo "  make dev-server       - Start AIRI Server only (port 6121)"
 	@echo "  make dev-web          - Start stage-web only (port 5173)"
 	@echo "  make dev-youtube      - Start YouTube Bot only (port 3000)"
-	@echo "  make test-youtube     - Send test message (without YouTube API)"
+	@echo "  make test-youtube     - Send test message interactively (prompts for input)"
+	@echo "  make test-message MSG='text' - Send test message directly"
 	@echo "  make stop             - Stop all services"
 	@echo ""
 	@echo "Knowledge DB:"
@@ -64,11 +65,22 @@ dev-youtube:
 	@echo "📺 Starting YouTube Bot (port 3000 for audio)..."
 	pnpm -F @proj-airi/youtube-bot start
 
-# テストメッセージ送信
+# テストメッセージ送信（インタラクティブ）
 test-youtube:
 	@echo "✉️  Sending test message to AIRI Server..."
 	@read -p "Enter message (default: テストメッセージです): " msg; \
 	pnpm -F @proj-airi/youtube-bot test-message "$${msg:-テストメッセージです}"
+
+# テストメッセージ送信（ダイレクト）
+# Usage: make test-message MSG="your message here"
+test-message:
+	@if [ -z "$(MSG)" ]; then \
+		echo "✉️  Sending default test message..."; \
+		pnpm -F @proj-airi/youtube-bot test-message "テストメッセージです"; \
+	else \
+		echo "✉️  Sending test message: $(MSG)"; \
+		pnpm -F @proj-airi/youtube-bot test-message "$(MSG)"; \
+	fi
 
 # すべてのサービスを停止（共通処理）
 stop-all:

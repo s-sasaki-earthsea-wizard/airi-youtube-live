@@ -8,8 +8,6 @@ import { Format, LogLevel, setGlobalFormat, setGlobalLogLevel, useLogg } from '@
 import { plugin as ws } from 'crossws/server'
 import { defineWebSocketHandler, H3, serve } from 'h3'
 
-import { WebSocketReadyState } from './types'
-
 setGlobalFormat(Format.Pretty)
 setGlobalLogLevel(LogLevel.Log)
 
@@ -198,17 +196,24 @@ function main() {
       }).log('broadcasting to peers')
 
       for (const [id, other] of peers.entries()) {
-        if (id === peer.id)
+        if (id === peer.id) {
+          console.info(`[DEBUG] Skipping sender peer ${id}`)
           continue
-        if (other.peer.readyState === WebSocketReadyState.OPEN) {
+        }
+
+        // Skip readyState check and always try to send
+        // crossws doesn't reliably provide readyState
+        try {
           websocketLogger.withFields({
             from: peer.id,
             to: id,
             eventType: event.type,
           }).log('sending to peer')
           other.peer.send(payload)
+          console.info(`[DEBUG] Successfully sent message to peer ${id}`)
         }
-        else {
+        catch (error) {
+          console.error(`[DEBUG] Failed to send to peer ${id}, deleting:`, error)
           peers.delete(id)
           unregisterModulePeer(other)
         }
