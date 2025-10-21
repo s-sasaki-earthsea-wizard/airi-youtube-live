@@ -1,6 +1,7 @@
 .PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube test-message stop stop-all \
         db-setup db-start db-stop db-restart db-status db-export db-sync-discord db-danger-clear-all \
-        collect-discord collect-discord-stop collect-discord-restart
+        collect-discord collect-discord-stop collect-discord-restart \
+        test-query-expansion
 
 # デフォルトターゲット: ヘルプを表示
 help:
@@ -17,6 +18,9 @@ help:
 	@echo "  make test-youtube     - Send test message interactively (prompts for input)"
 	@echo "  make test-message MSG='text' - Send test message directly"
 	@echo "  make stop             - Stop all services"
+	@echo ""
+	@echo "テスト:"
+	@echo "  make test-query-expansion - Test LLM-based query expansion for Knowledge DB"
 	@echo ""
 	@echo "Knowledge DB:"
 	@echo "  make db-setup              - Initial setup (install deps + start DB + apply schema)"
@@ -106,6 +110,16 @@ stream-stop: stop-all
 
 # すべてのサービスを停止（stop-allのエイリアス）
 stop: stop-all
+
+# ========================================
+# Test Commands
+# ========================================
+
+# Query Expansion テスト（LLM-based keyword expansion for Knowledge DB）
+test-query-expansion:
+	@echo "🧪 Testing Query Expansion feature..."
+	@echo ""
+	@cd apps/stage-web && pnpm tsx src/test-query-expansion.ts
 
 # ========================================
 # Knowledge DB Commands
