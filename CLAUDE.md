@@ -18,7 +18,7 @@
 
 ### Git運用
 
-- ブランチ戦略: feature/*, fix/*, refactor/*
+- ブランチ戦略: feat/*, fix/*, refactor/*
 - コミットメッセージ: 英文を使用、動詞から始める
 - PRはmainブランチへ
 
@@ -76,6 +76,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - [2025-10-17: YouTube Streaming Mode UI](./.claude-notes/sessions/2025-10-17-streaming-mode-ui.md) - YouTube配信向けUIカスタマイズ機能の実装
 - [2025-10-17: Idle Talk with Knowledge DB](./.claude-notes/sessions/2025-10-17-idle-talk.md) - アイドル状態でのランダム話題会話機能の実装
 - [2025-10-20: Topic Continuation Unification](./.claude-notes/sessions/2025-10-20-topic-continuation.md) - トピック継続ロジックの共通化とチャット継続機能の実装
+- [2025-10-21: YouTube Comment Processing Fix](./.claude-notes/sessions/2025-10-21-youtube-comment-fix.md) - YouTubeコメント処理の致命的バグ修正（WebSocket初期化、イベントリスナー、readyState）
 
 ## 将来の拡張計画
 
