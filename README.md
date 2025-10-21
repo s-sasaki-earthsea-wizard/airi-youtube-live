@@ -29,6 +29,13 @@
 > 🧠 **[Knowledge DB Documentation](./services/knowledge-db/README.md)** - RAG system setup and Discord integration
 >
 > 🎥 **[Streaming Mode Documentation](./apps/stage-web/README.md#youtube-streaming-mode)** - UI configuration for YouTube Live
+>
+> **🔓 Open Data & Transparency:**
+> - System prompts and Knowledge DB training data are publicly shared under **MIT License**
+> - Exported data (`make db-export`) excludes personal identifiers for privacy protection
+> - Feel free to use for prompt engineering research and experiments
+> - Current data source: Developer's own posts only (Discord)
+> - Please use responsibly
 
 <p align="center">
   [<a href="https://discord.gg/TgQ3Cu2F7A">Join Discord Server</a>] [<a href="https:///airi.moeru.ai">Try it</a>] [<a href="https://github.com/moeru-ai/airi/blob/main/docs/README.zh-CN.md">简体中文</a>] [<a href="https://github.com/moeru-ai/airi/blob/main/docs/README.ja-JP.md">日本語</a>] [<a href="https://github.com/moeru-ai/airi/blob/main/docs/README.ru-RU.md">Русский</a>] [<a href="https://github.com/moeru-ai/airi/blob/main/docs/README.vi.md">Tiếng Việt</a>] [<a href="https://github.com/moeru-ai/airi/blob/main/docs/README.fr.md">Français</a>]

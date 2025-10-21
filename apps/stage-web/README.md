@@ -85,14 +85,29 @@ VITE_IDLE_TALK_MODE=random
 
 # Minimum similarity threshold for random topic selection (0-1)
 VITE_IDLE_TALK_MIN_SIMILARITY=0.0
+
+# Context continuation: Continue talking about related topics (recommended: true for natural flow)
+VITE_IDLE_TALK_CONTINUE_CONTEXT=true
+
+# Maximum number of times to continue the same topic before switching to new topic
+VITE_IDLE_TALK_MAX_CONTINUATION=5
+
+# Number of recent topics to remember and exclude from future selections (prevents repetition)
+VITE_IDLE_TALK_TOPIC_HISTORY_SIZE=5
+
+# Number of random topics to fetch from Knowledge DB (higher = more diversity, but more bandwidth)
+VITE_IDLE_TALK_FETCH_LIMIT=10
 ```
 
 ### Features
 
 - **Timer-based Idle Detection**: Monitors user inactivity using configurable timeout
-- **Random Topic Selection**: Fetches 5 random topics from Knowledge DB and picks one randomly
+- **Random Topic Selection**: Fetches random topics from Knowledge DB with configurable limit
+- **Topic Repetition Prevention**: Remembers recently used topics and excludes them from future selections
+- **Context Continuation**: Can continue talking about related topics for multiple iterations
 - **Automatic LLM Response**: Generates contextual responses based on selected topics
 - **TTS Audio Playback**: Automatically converts responses to speech using configured TTS provider
+- **Speech-aware Timing**: Defers idle talk if character is currently speaking
 - **Auto-reset Timer**: Resets idle timer whenever user sends a message
 - **Environment Toggle**: Enable/disable feature via `VITE_IDLE_TALK_ENABLED`
 
@@ -128,10 +143,54 @@ VITE_IDLE_TALK_ENABLED=false
 
 ### Integration with Knowledge DB
 
-The idle talk feature uses the `/knowledge/random` endpoint:
+The idle talk feature uses the `/knowledge/random` endpoint with topic exclusion support:
 
-```
-GET http://localhost:3100/knowledge/random?limit=5
+```http
+GET http://localhost:3100/knowledge/random?limit=10&excludeIds=id1,id2,id3
 ```
 
-This endpoint returns random posts from the knowledge database without requiring similarity search, making it ideal for diverse topic selection.
+This endpoint returns random posts from the knowledge database without requiring similarity search, making it ideal for diverse topic selection. The `excludeIds` parameter allows excluding recently used topics to prevent repetition.
+
+## Message Queue System
+
+The message queue system prevents conversation interruption during speech playback by queueing incoming messages when the character is speaking.
+
+### Features
+
+- **Automatic Queueing**: Messages received during speech are automatically queued
+- **Sequential Processing**: Queued messages are processed in order (FIFO) after speech ends
+- **No Message Loss**: All messages are guaranteed to be processed
+- **Real-time Processing**: Messages are processed immediately when not speaking
+- **Speech-aware**: Monitors `nowSpeaking` state from audio store
+
+### How It Works
+
+When a YouTube comment arrives while the character is speaking:
+
+1. WebSocket receives the message
+2. Checks if character is speaking (`nowSpeaking=true`)
+3. If speaking: adds message to queue
+4. If not speaking: processes immediately
+5. When speech ends: automatically processes next message from queue
+6. Repeats until queue is empty
+
+### Configuration
+
+The message queue system is automatically enabled when `VITE_AUTO_RESPONSE_ENABLED=true` is set. No additional configuration is required.
+
+### Debugging
+
+Use the Console Logger feature to monitor queue activity:
+
+```javascript
+// In browser console
+window.exportLogsText()  // Download logs with queue activity
+window.logStats()        // Show log statistics
+```
+
+Look for log entries like:
+- `[MessageQueue] Message queued (2 in queue)`
+- `[MessageQueue] Speech ended, checking queue...`
+- `[MessageQueue] Dequeued message (1 remaining)`
+
+For detailed documentation, see [MESSAGE-QUEUE.md](./MESSAGE-QUEUE.md).

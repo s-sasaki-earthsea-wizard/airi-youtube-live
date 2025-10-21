@@ -2,12 +2,11 @@ import type { WebSocketEvent } from '@proj-airi/server-shared/types'
 
 import type { AuthenticatedPeer, Peer } from './types'
 
-import { env } from 'node:process'
+import { argv, env } from 'node:process'
 
 import { Format, LogLevel, setGlobalFormat, setGlobalLogLevel, useLogg } from '@guiiai/logg'
-import { defineWebSocketHandler, H3 } from 'h3'
-
-import { WebSocketReadyState } from './types'
+import { plugin as ws } from 'crossws/server'
+import { defineWebSocketHandler, H3, serve } from 'h3'
 
 setGlobalFormat(Format.Pretty)
 setGlobalLogLevel(LogLevel.Log)
@@ -27,12 +26,18 @@ function send(peer: Peer, event: WebSocketEvent<Record<string, unknown>> | strin
 }
 
 function main() {
+  console.info('[DEBUG] main() function called')
   const appLogger = useLogg('App').useGlobalConfig()
   const websocketLogger = useLogg('WebSocket').useGlobalConfig()
+  console.info('[DEBUG] Loggers initialized')
 
   const app = new H3({
-    onError: error => appLogger.withError(error).error('an error occurred'),
+    onError: (error) => {
+      console.error('[DEBUG] H3 onError:', error)
+      appLogger.withError(error).error('an error occurred')
+    },
   })
+  console.info('[DEBUG] H3 app created')
 
   const peers = new Map<string, AuthenticatedPeer>()
   const peersByModule = new Map<string, Map<number | undefined, AuthenticatedPeer>>()
@@ -61,8 +66,13 @@ function main() {
     }
   }
 
+  // Test endpoint
+  app.get('/test', () => ({ message: 'AIRI Server is running', timestamp: new Date().toISOString() }))
+
   app.get('/ws', defineWebSocketHandler({
     open: (peer) => {
+      console.info('[DEBUG] WebSocket connection opened:', { peerId: peer.id })
+
       if (AUTH_TOKEN) {
         peers.set(peer.id, { peer, authenticated: false, name: '' })
       }
@@ -71,6 +81,7 @@ function main() {
         peers.set(peer.id, { peer, authenticated: true, name: '' })
       }
 
+      console.info('[DEBUG] Peer registered:', { peerId: peer.id, authenticated: !AUTH_TOKEN, totalPeers: peers.size })
       websocketLogger.withFields({ peer: peer.id, activePeers: peers.size }).log('connected')
     },
     message: (peer, message) => {
@@ -83,6 +94,10 @@ function main() {
         send(peer, { type: 'error', data: { message: `invalid JSON, error: ${errorMessage}` } })
         return
       }
+
+      // DEBUG: Log all received messages
+      console.info('[DEBUG] Received message:', { peer: peer.id, eventType: event.type })
+      websocketLogger.withFields({ peer: peer.id, eventType: event.type }).log('received message')
 
       switch (event.type) {
         case 'module:authenticate': {
@@ -120,6 +135,10 @@ function main() {
             }
             Object.assign(p, { name, index })
             registerModulePeer(p, p.name, p.index)
+
+            // Send acknowledgment to client
+            send(peer, { type: 'module:announced', data: { name, index } })
+            websocketLogger.withFields({ peer: peer.id, name, index }).log('module announced')
           }
           return
         }
@@ -154,6 +173,14 @@ function main() {
 
       // default case
       const p = peers.get(peer.id)
+      // DEBUG: Log authentication status
+      websocketLogger.withFields({
+        peer: peer.id,
+        authenticated: p?.authenticated,
+        peerExists: !!p,
+        eventType: event.type,
+      }).log('default case - auth check')
+
       if (!p?.authenticated) {
         websocketLogger.withFields({ peer: peer.id }).debug('not authenticated')
         peer.send(RESPONSES.notAuthenticated)
@@ -161,13 +188,32 @@ function main() {
       }
 
       const payload = JSON.stringify(event)
+      // DEBUG: Log broadcast
+      websocketLogger.withFields({
+        peer: peer.id,
+        totalPeers: peers.size,
+        eventType: event.type,
+      }).log('broadcasting to peers')
+
       for (const [id, other] of peers.entries()) {
-        if (id === peer.id)
+        if (id === peer.id) {
+          console.info(`[DEBUG] Skipping sender peer ${id}`)
           continue
-        if (other.peer.readyState === WebSocketReadyState.OPEN) {
-          other.peer.send(payload)
         }
-        else {
+
+        // Skip readyState check and always try to send
+        // crossws doesn't reliably provide readyState
+        try {
+          websocketLogger.withFields({
+            from: peer.id,
+            to: id,
+            eventType: event.type,
+          }).log('sending to peer')
+          other.peer.send(payload)
+          console.info(`[DEBUG] Successfully sent message to peer ${id}`)
+        }
+        catch (error) {
+          console.error(`[DEBUG] Failed to send to peer ${id}, deleting:`, error)
           peers.delete(id)
           unregisterModulePeer(other)
         }
@@ -189,4 +235,19 @@ function main() {
   return app
 }
 
+// Create single app instance
 export const app = main()
+
+// Start server only if this file is run directly (not imported)
+if (import.meta.url === `file://${argv[1]}`) {
+  const port = Number.parseInt(env.PORT || '6121', 10)
+
+  console.info(`[AIRI Server] Starting server on port ${port}...`)
+  serve(app, {
+    port,
+    plugins: [ws({
+      resolve: async req => (await app.fetch(req)).crossws,
+    })],
+  })
+  console.info(`[AIRI Server] Server is ready at http://localhost:${port}`)
+}

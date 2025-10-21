@@ -72,7 +72,7 @@ onMounted(() => {
 
         if (knowledgeResponse && knowledgeResponse.results.length > 0) {
           // Format knowledge and inject into system prompt
-          const knowledgeContext = knowledgeDB!.formatKnowledgeForPrompt(knowledgeResponse.results)
+          const knowledgeContext = await knowledgeDB!.formatKnowledgeForPrompt(knowledgeResponse.results)
 
           // Update the system prompt with knowledge context
           const defaultCard = airiCardStore.getCard('default')

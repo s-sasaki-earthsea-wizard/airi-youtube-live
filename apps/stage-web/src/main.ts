@@ -16,12 +16,23 @@ import App from './App.vue'
 
 import { useWebSocketClient } from './composables/websocket-client'
 import { i18n } from './modules/i18n'
+import { setupConsoleLogger } from './utils/console-logger'
 
 import '@proj-airi/font-cjkfonts-allseto/index.css'
 import '@proj-airi/font-xiaolai/index.css'
 import '@unocss/reset/tailwind.css'
 import './styles/main.css'
 import 'uno.css'
+
+// Setup console logger to capture logs for debugging
+// Available commands in browser console:
+//   - window.exportLogs()     : Download logs as JSON
+//   - window.exportLogsText() : Download logs as text
+//   - window.clearLogs()      : Clear all logs
+//   - window.logStats()       : Show statistics
+if (import.meta.env.DEV) {
+  setupConsoleLogger()
+}
 
 const pinia = createPinia()
 const routeRecords = setupLayouts(routes)

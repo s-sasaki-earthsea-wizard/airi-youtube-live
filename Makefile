@@ -1,4 +1,4 @@
-.PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube stop \
+.PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube test-message stop stop-all \
         db-setup db-start db-stop db-restart db-status db-export db-sync-discord db-danger-clear-all \
         collect-discord collect-discord-stop collect-discord-restart
 
@@ -14,7 +14,8 @@ help:
 	@echo "  make dev-server       - Start AIRI Server only (port 6121)"
 	@echo "  make dev-web          - Start stage-web only (port 5173)"
 	@echo "  make dev-youtube      - Start YouTube Bot only (port 3000)"
-	@echo "  make test-youtube     - Send test message (without YouTube API)"
+	@echo "  make test-youtube     - Send test message interactively (prompts for input)"
+	@echo "  make test-message MSG='text' - Send test message directly"
 	@echo "  make stop             - Stop all services"
 	@echo ""
 	@echo "Knowledge DB:"
@@ -36,6 +37,9 @@ help:
 
 # 配信開始（全サービス起動、ログ最小化）
 stream:
+	@make stop-all
+	@echo "🗑️ Removing obs-browser cache..."
+	rm -rf ~/Library/Application\ Support/obs-studio/plugin_config/obs-browser/*
 	@echo "🎥 Starting streaming services..."
 	@trap 'make stream-stop' INT; \
 	pnpm -F @proj-airi/server-runtime dev > /dev/null 2>&1 & \
@@ -61,27 +65,47 @@ dev-youtube:
 	@echo "📺 Starting YouTube Bot (port 3000 for audio)..."
 	pnpm -F @proj-airi/youtube-bot start
 
-# テストメッセージ送信
+# テストメッセージ送信（インタラクティブ）
 test-youtube:
 	@echo "✉️  Sending test message to AIRI Server..."
 	@read -p "Enter message (default: テストメッセージです): " msg; \
 	pnpm -F @proj-airi/youtube-bot test-message "$${msg:-テストメッセージです}"
 
-# 配信停止
-stream-stop:
-	@echo "🛑 Stopping streaming services..."
-	@pkill -f "server-runtime" || true
-	@pkill -f "stage-web" || true
-	@pkill -f "youtube-bot" || true
-	@echo "✅ Streaming stopped"
+# テストメッセージ送信（ダイレクト）
+# Usage: make test-message MSG="your message here"
+test-message:
+	@if [ -z "$(MSG)" ]; then \
+		echo "✉️  Sending default test message..."; \
+		pnpm -F @proj-airi/youtube-bot test-message "テストメッセージです"; \
+	else \
+		echo "✉️  Sending test message: $(MSG)"; \
+		pnpm -F @proj-airi/youtube-bot test-message "$(MSG)"; \
+	fi
 
-# すべてのサービスを停止（開発用）
-stop:
-	@echo "🛑 Stopping all services..."
-	@pkill -f "server-runtime" || true
-	@pkill -f "stage-web" || true
-	@pkill -f "youtube-bot" || true
-	@echo "✅ All services stopped"
+# すべてのサービスを停止（共通処理）
+stop-all:
+	@echo "🛑 Stopping all AIRI services..."
+	@count=0; \
+	for proc in "server-runtime" "stage-web" "youtube-bot"; do \
+		num=$$(pgrep -f "$$proc" | wc -l); \
+		if [ $$num -gt 0 ]; then \
+			echo "  Stopping $$num process(es) for $$proc..."; \
+			pkill -f "$$proc" || true; \
+			count=$$((count + num)); \
+		fi; \
+	done; \
+	sleep 1; \
+	if [ $$count -gt 0 ]; then \
+		echo "✅ Stopped $$count process(es)"; \
+	else \
+		echo "✅ No processes running"; \
+	fi
+
+# 配信停止（stop-allのエイリアス）
+stream-stop: stop-all
+
+# すべてのサービスを停止（stop-allのエイリアス）
+stop: stop-all
 
 # ========================================
 # Knowledge DB Commands
@@ -182,9 +206,9 @@ db-sync-discord:
 	@sleep 2
 	@echo "📡 Starting Discord collector..."
 	@if [ -n "$(LIMIT)" ]; then \
-		cd services/knowledge-db && DISCORD_HISTORICAL_LIMIT=$(LIMIT) pnpm collect:discord > /tmp/discord-collector.log 2>&1 &; \
+		cd services/knowledge-db && DISCORD_HISTORICAL_LIMIT=$(LIMIT) pnpm collect:discord > /tmp/discord-collector.log 2>&1 & \
 	else \
-		cd services/knowledge-db && pnpm collect:discord > /tmp/discord-collector.log 2>&1 &; \
+		cd services/knowledge-db && pnpm collect:discord > /tmp/discord-collector.log 2>&1 & \
 	fi
 	@sleep 3
 	@echo "✅ Discord sync complete!"

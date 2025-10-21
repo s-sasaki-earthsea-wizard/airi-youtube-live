@@ -8,8 +8,8 @@ export const useConsciousnessStore = defineStore('consciousness', () => {
   const providersStore = useProvidersStore()
 
   // State
-  const activeProvider = useLocalStorage('settings/consciousness/active-provider', '')
-  const activeModel = useLocalStorage('settings/consciousness/active-model', '')
+  const activeProvider = useLocalStorage('settings/consciousness/active-provider', import.meta.env.VITE_LLM_PROVIDER || '')
+  const activeModel = useLocalStorage('settings/consciousness/active-model', import.meta.env.VITE_LLM_MODEL || '')
   const activeCustomModelName = useLocalStorage('settings/consciousness/active-custom-model', '')
   const expandedDescriptions = ref<Record<string, boolean>>({})
   const modelSearchQuery = ref('')

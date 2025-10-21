@@ -20,6 +20,7 @@ import LicenseNotice from './components/LicenseNotice.vue'
 import { useIdleTalk } from './composables/idle-talk'
 import { useKnowledgeDB } from './composables/useKnowledgeDB'
 import { useKnowledgeDBIntegration } from './composables/useKnowledgeDBIntegration'
+import { useWebSocketClient } from './composables/websocket-client'
 import { usePWAStore } from './stores/pwa'
 
 import 'vue-sonner/style.css'
@@ -74,6 +75,12 @@ watch(settings.themeColorsHueDynamic, () => {
 
 // Initialize first-time setup check when app mounts
 onMounted(async () => {
+  // Initialize WebSocket client for YouTube/Discord/Telegram integration
+  console.info('[AIRI] Initializing WebSocket client...')
+  const { airiClient } = useWebSocketClient()
+  console.info('[AIRI] WebSocket client initialized')
+  console.info('[AIRI] WebSocket client instance:', { airiClient })
+
   // Load configuration from environment variables
   const llmProvider = import.meta.env.VITE_LLM_PROVIDER
   const llmApiKey = import.meta.env.VITE_LLM_API_KEY
@@ -220,6 +227,8 @@ onMounted(async () => {
   const idleTalkMinSimilarity = Number(import.meta.env.VITE_IDLE_TALK_MIN_SIMILARITY || 0.0)
   const idleTalkContinueContext = import.meta.env.VITE_IDLE_TALK_CONTINUE_CONTEXT === 'true'
   const idleTalkMaxContinuation = Number(import.meta.env.VITE_IDLE_TALK_MAX_CONTINUATION || 5)
+  const idleTalkTopicHistorySize = Number(import.meta.env.VITE_IDLE_TALK_TOPIC_HISTORY_SIZE || 5)
+  const idleTalkFetchLimit = Number(import.meta.env.VITE_IDLE_TALK_FETCH_LIMIT || 10)
 
   if (idleTalkEnabled) {
     console.info('[App.vue] Initializing idle talk feature')
@@ -231,6 +240,8 @@ onMounted(async () => {
       minSimilarity: idleTalkMinSimilarity,
       continueContext: idleTalkContinueContext,
       maxContextContinuation: idleTalkMaxContinuation,
+      topicHistorySize: idleTalkTopicHistorySize,
+      fetchLimit: idleTalkFetchLimit,
     })
 
     idleTalk.initialize()

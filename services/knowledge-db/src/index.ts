@@ -11,8 +11,12 @@ import { postsTable } from './db/schema.js'
 import 'dotenv/config'
 
 const app = express()
-const PORT = env.PORT || 3100
+const PORT = Number(env.PORT) || 3100
 const HOST = env.HOST || '0.0.0.0'
+
+// Random topic configuration
+const RANDOM_TOPIC_DEFAULT_LIMIT = Number(env.RANDOM_TOPIC_DEFAULT_LIMIT) || 5
+const RANDOM_TOPIC_MAX_LIMIT = Number(env.RANDOM_TOPIC_MAX_LIMIT) || 20
 
 // Enable CORS for all routes
 app.use((req, res, next) => {
@@ -120,9 +124,27 @@ app.get('/knowledge', async (req, res) => {
 // Get random posts endpoint (for idle talk feature)
 app.get('/knowledge/random', async (req, res) => {
   try {
-    const { limit = 5, source: _source } = req.query
+    const { limit, source: _source, excludeIds } = req.query
 
-    // Build query with optional source filter
+    // Parse and validate limit
+    const requestedLimit = limit ? Number(limit) : RANDOM_TOPIC_DEFAULT_LIMIT
+    const validatedLimit = Math.min(requestedLimit, RANDOM_TOPIC_MAX_LIMIT)
+
+    // Parse excludeIds if provided (comma-separated string)
+    let excludeIdArray: string[] = []
+    if (excludeIds && typeof excludeIds === 'string') {
+      excludeIdArray = excludeIds.split(',').map(id => id.trim()).filter(id => id.length > 0)
+    }
+
+    // Build WHERE clause with optional exclusions
+    let whereClause = sql`${postsTable.content_vector_1536} IS NOT NULL`
+
+    if (excludeIdArray.length > 0) {
+      // Add exclusion condition: id NOT IN (excludeIds)
+      whereClause = sql`${postsTable.content_vector_1536} IS NOT NULL AND ${postsTable.id} NOT IN (${sql.raw(excludeIdArray.map(id => `'${id}'`).join(','))})`
+    }
+
+    // Build query with optional source filter and exclusions
     const query = db
       .select({
         id: postsTable.id,
@@ -133,9 +155,9 @@ app.get('/knowledge/random', async (req, res) => {
         posted_at: postsTable.posted_at,
       })
       .from(postsTable)
-      .where(sql`${postsTable.content_vector_1536} IS NOT NULL`)
+      .where(whereClause)
       .orderBy(sql`RANDOM()`)
-      .limit(Number(limit))
+      .limit(validatedLimit)
 
     const posts = await query
 

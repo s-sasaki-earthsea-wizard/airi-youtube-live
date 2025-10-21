@@ -39,7 +39,11 @@ export const useSettings = defineStore('settings', () => {
 
   const language = useLocalStorage('settings/language', '')
 
-  const stageModelSelected = useLocalStorage<string | undefined>('settings/stage/model', 'preset-live2d-1')
+  // Avatar model selection with environment variable support
+  const stageModelSelected = useLocalStorage<string | undefined>(
+    'settings/stage/model',
+    import.meta.env.VITE_AVATAR_MODEL || 'preset-vrm-2',
+  )
   const stageModelSelectedDisplayModel = ref<DisplayModel | undefined>()
   const stageModelSelectedUrl = ref<string>()
   const stageModelRenderer = ref<'live2d' | 'vrm' | 'disabled'>()

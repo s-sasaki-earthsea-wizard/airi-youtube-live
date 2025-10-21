@@ -2,7 +2,15 @@
  * Export knowledge database to JSON file
  *
  * This script exports all posts from the knowledge database to a JSON file.
- * Vector data is excluded to keep file size manageable.
+ * For privacy protection, only public-safe fields are included:
+ * - content: The actual post content
+ * - source: Platform name (discord, twitter, etc.)
+ * - posted_date: Date only (no time for additional privacy)
+ *
+ * Excluded fields (privacy protection):
+ * - author: User names/handles
+ * - url: Direct links to original posts
+ * - external_id: Platform-specific IDs
  *
  * Usage:
  *   pnpm run export:db [output-file]
@@ -31,33 +39,43 @@ async function main() {
   const outputDir = resolve(outputFile, '..')
   await mkdir(outputDir, { recursive: true })
 
-  // Fetch all posts (excluding vector data)
+  // Fetch all posts (excluding vector data and private fields)
   const posts = await db
     .select({
       id: postsTable.id,
-      external_id: postsTable.external_id,
       source: postsTable.source,
-      author: postsTable.author,
       content: postsTable.content,
-      url: postsTable.url,
       posted_at: postsTable.posted_at,
-      created_at: postsTable.created_at,
-      updated_at: postsTable.updated_at,
     })
     .from(postsTable)
     .orderBy(postsTable.posted_at)
 
-  // Create export data
+  // Transform data for public export
+  const publicPosts = posts.map(post => ({
+    id: post.id,
+    source: post.source,
+    content: post.content,
+    // Convert to date-only format for additional privacy
+    posted_date: new Date(post.posted_at).toISOString().split('T')[0],
+  }))
+
+  // Create export data with privacy notice
   const exportData = {
     exported_at: new Date().toISOString(),
-    total_posts: posts.length,
-    posts,
+    total_posts: publicPosts.length,
+    notice: 'Privacy protection: author, url, and external_id fields are excluded from this export',
+    license: 'MIT',
+    usage_note: 'This data is from the developer\'s own posts. Feel free to use for prompt engineering research. Please use responsibly.',
+    data_sources: [...new Set(posts.map(p => p.source))],
+    posts: publicPosts,
   }
 
   // Write to file
   writeFileSync(outputFile, JSON.stringify(exportData, null, 2), 'utf-8')
 
-  console.info(`[export-db] Successfully exported ${posts.length} posts`)
+  console.info(`[export-db] Successfully exported ${publicPosts.length} posts`)
+  console.info(`[export-db] Privacy-protected fields: content, source, posted_date only`)
+  console.info(`[export-db] Excluded for privacy: author, url, external_id`)
   console.info(`[export-db] Output file: ${outputFile}`)
 }
 

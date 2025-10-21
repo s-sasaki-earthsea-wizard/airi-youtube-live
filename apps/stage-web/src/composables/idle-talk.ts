@@ -18,12 +18,14 @@
 
 import type { ChatProvider } from '@xsai-ext/shared-providers'
 
+import { useSpeakingStore } from '@proj-airi/stage-ui/stores/audio'
 import { useChatStore } from '@proj-airi/stage-ui/stores/chat'
 import { useConsciousnessStore } from '@proj-airi/stage-ui/stores/modules/consciousness'
 import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
-import { nextTick, ref } from 'vue'
+import { ref } from 'vue'
 
 import { useKnowledgeDB } from './useKnowledgeDB'
+import { useTopicContinuation } from './useTopicContinuation'
 
 export interface IdleTalkConfig {
   enabled: boolean
@@ -32,6 +34,8 @@ export interface IdleTalkConfig {
   minSimilarity: number // 0-1
   continueContext: boolean // whether to continue previous topic
   maxContextContinuation: number // maximum number of times to continue the same topic
+  topicHistorySize: number // number of recent topics to remember and exclude
+  fetchLimit: number // number of random topics to fetch from Knowledge DB
 }
 
 /**
@@ -46,12 +50,45 @@ export function useIdleTalk(config: IdleTalkConfig) {
   const providersStore = useProvidersStore()
   const knowledgeDB = useKnowledgeDB()
 
+  // Initialize topic continuation composable
+  const topicContinuation = useTopicContinuation({
+    maxContinuation: config.maxContextContinuation,
+    enabled: config.continueContext,
+  })
+
   const isEnabled = ref(config.enabled)
   const lastInteractionTime = ref(Date.now())
   const idleTimerId = ref<number | null>(null)
-  const lastResponse = ref<string | null>(null) // Store last AI response for context continuation
-  const initialTopic = ref<string | null>(null) // Store initial topic to detect drift
-  const contextContinuationCount = ref(0) // Track how many times we've continued the same topic
+  const recentTopicIds = ref<string[]>([]) // Track recently used topic IDs to avoid repetition
+  const initialTopicInstruction = ref<string | null>(null) // Cache for initial topic instruction
+
+  /**
+   * Load initial topic instruction from file
+   * Loads once and caches the result
+   */
+  async function loadInitialTopicInstruction(): Promise<string> {
+    // Return cached version if already loaded
+    if (initialTopicInstruction.value !== null) {
+      return initialTopicInstruction.value
+    }
+
+    try {
+      const response = await fetch('/prompts/idle-talk-initial-topic.md')
+      if (!response.ok) {
+        throw new Error(`Failed to load idle talk instruction: ${response.status}`)
+      }
+      const text = await response.text()
+      initialTopicInstruction.value = text
+      return text
+    }
+    catch (err) {
+      console.warn('[IdleTalk] Failed to load instruction file, using default', err)
+      // Fallback to simple default instruction
+      const defaultInstruction = '以下の話題について話してください。'
+      initialTopicInstruction.value = defaultInstruction
+      return defaultInstruction
+    }
+  }
 
   /**
    * Reset idle timer
@@ -62,9 +99,7 @@ export function useIdleTalk(config: IdleTalkConfig) {
 
     // Clear context when starting a new topic
     if (clearContext) {
-      lastResponse.value = null
-      initialTopic.value = null
-      contextContinuationCount.value = 0
+      topicContinuation.resetContext()
       console.info('[IdleTalk] Context cleared, starting new topic')
     }
 
@@ -104,6 +139,15 @@ export function useIdleTalk(config: IdleTalkConfig) {
 
     if (!isEnabled.value || isCurrentlyIdleTalking.value) {
       console.warn(`[IdleTalk] Skipping idle timeout: isEnabled=${isEnabled.value}, isCurrentlyIdleTalking=${isCurrentlyIdleTalking.value}`)
+      return
+    }
+
+    // Check if character is currently speaking
+    const speakingStore = useSpeakingStore()
+    if (speakingStore.nowSpeaking) {
+      console.info('[IdleTalk] Character is currently speaking, deferring idle talk')
+      // Restart timer to check again later
+      resetIdleTimer(false)
       return
     }
 
@@ -157,25 +201,25 @@ export function useIdleTalk(config: IdleTalkConfig) {
         const initialHistoryLength = chatStore.messages.length
         console.info(`[IdleTalk] Initial chat history length: ${initialHistoryLength}`)
 
-        // Set up a one-time hook to remove the prompt message immediately after it's composed
-        let hookRemoved = false
-        const removePromptHook = async () => {
-          if (hookRemoved)
+        // Set up a one-time hook to mark the prompt message as hidden in UI
+        let hookExecuted = false
+        const hidePromptHook = async () => {
+          if (hookExecuted)
             return
 
-          // Find and remove the user message we just added
-          await nextTick()
+          // Find the user message we just added and mark it as hidden in UI
           const userMessageIndex = chatStore.messages.findLastIndex(msg => msg.role === 'user')
           if (userMessageIndex !== -1 && userMessageIndex >= initialHistoryLength) {
-            chatStore.messages.splice(userMessageIndex, 1)
-            console.info(`[IdleTalk] Removed idle talk prompt immediately at index ${userMessageIndex}`)
+            // Add _hideInUI flag to hide this internal prompt from UI
+            (chatStore.messages[userMessageIndex] as any)._hideInUI = true
+            console.info(`[IdleTalk] Marked idle talk prompt as hidden in UI at index ${userMessageIndex}`)
           }
 
-          hookRemoved = true
+          hookExecuted = true
         }
 
         // Register the hook before sending
-        chatStore.onAfterMessageComposed(removePromptHook)
+        chatStore.onAfterMessageComposed(hidePromptHook)
 
         // Send the topic as a user message
         // This will trigger all the necessary pipelines (TTS, etc.)
@@ -185,43 +229,6 @@ export function useIdleTalk(config: IdleTalkConfig) {
           chatProvider: providerInstance as ChatProvider,
           providerConfig,
         })
-
-        // Wait for the assistant's response to be added to chat history
-        // Poll the chat history until we see the assistant response
-        // Note: We don't look for user message anymore since it was already removed by the hook
-        const maxWaitTime = 30000 // 30 seconds max wait
-        const pollInterval = 100 // Check every 100ms
-        const startTime = Date.now()
-        let assistantResponseFound = false
-
-        while (!assistantResponseFound && Date.now() - startTime < maxWaitTime) {
-          // Check if we have new assistant message
-          // Since we removed the user message immediately, we only expect +1 (assistant)
-          if (chatStore.messages.length > initialHistoryLength) {
-            // Look for the assistant's response
-            const newMessages = chatStore.messages.slice(initialHistoryLength)
-            const hasAssistantResponse = newMessages.some(msg => msg.role === 'assistant')
-
-            if (hasAssistantResponse) {
-              assistantResponseFound = true
-              console.info(`[IdleTalk] Assistant response detected after ${Date.now() - startTime}ms`)
-              break
-            }
-          }
-
-          // Wait before next poll
-          await new Promise(resolve => setTimeout(resolve, pollInterval))
-        }
-
-        if (!assistantResponseFound) {
-          console.warn(`[IdleTalk] Timeout waiting for assistant response after ${maxWaitTime}ms`)
-        }
-
-        console.info(`[IdleTalk] Chat history length: ${chatStore.messages.length}`)
-        console.info(`[IdleTalk] Last 3 messages:`, chatStore.messages.slice(-3).map(m => ({ role: m.role, content: typeof m.content === 'string' ? m.content.substring(0, 50) : 'non-string' })))
-
-        // Note: lastResponse will be stored by onAssistantResponseEnd hook
-        // No need to store it here
 
         console.info('[IdleTalk] LLM response generated successfully')
       }
@@ -245,6 +252,7 @@ export function useIdleTalk(config: IdleTalkConfig) {
   /**
    * Get random topic from knowledge database
    * Used when there's no current topic context
+   * Automatically excludes recently used topics to prevent repetition
    */
   async function getRandomTopic() {
     if (!knowledgeDB.config.enabled) {
@@ -253,10 +261,26 @@ export function useIdleTalk(config: IdleTalkConfig) {
     }
 
     try {
-      // Get 5 random topics and pick one randomly (for diversity)
-      const topics = await knowledgeDB.getRandomTopic({ limit: 5 })
+      // Get topics from Knowledge DB with exclusions
+      const topics = await knowledgeDB.getRandomTopic({
+        limit: config.fetchLimit,
+        excludeIds: recentTopicIds.value,
+      })
 
       if (!topics || topics.length === 0) {
+        // If no topics available (all excluded), clear history and try again
+        if (recentTopicIds.value.length > 0) {
+          console.warn('[IdleTalk] No topics available after exclusions, clearing history')
+          recentTopicIds.value = []
+          const retryTopics = await knowledgeDB.getRandomTopic({ limit: config.fetchLimit })
+          if (!retryTopics || retryTopics.length === 0) {
+            return null
+          }
+          const selectedTopic = retryTopics[Math.floor(Math.random() * retryTopics.length)]
+          addTopicToHistory(selectedTopic.id)
+          console.info(`[IdleTalk] Selected random topic from ${selectedTopic.author}: ${selectedTopic.content.substring(0, 50)}...`)
+          return selectedTopic
+        }
         return null
       }
 
@@ -264,13 +288,27 @@ export function useIdleTalk(config: IdleTalkConfig) {
       const randomIndex = Math.floor(Math.random() * topics.length)
       const selectedTopic = topics[randomIndex]
 
+      // Add to history to avoid repeating
+      addTopicToHistory(selectedTopic.id)
+
       console.info(`[IdleTalk] Selected random topic from ${selectedTopic.author}: ${selectedTopic.content.substring(0, 50)}...`)
+      console.info(`[IdleTalk] Topic history (${recentTopicIds.value.length}/${config.topicHistorySize}): ${recentTopicIds.value.join(', ')}`)
 
       return selectedTopic
     }
     catch (error) {
       console.error('[IdleTalk] Error fetching random topic:', error)
       return null
+    }
+  }
+
+  /**
+   * Add topic ID to history and maintain size limit
+   */
+  function addTopicToHistory(topicId: string) {
+    recentTopicIds.value.push(topicId)
+    if (recentTopicIds.value.length > config.topicHistorySize) {
+      recentTopicIds.value.shift() // Remove oldest
     }
   }
 
@@ -282,51 +320,14 @@ export function useIdleTalk(config: IdleTalkConfig) {
    */
   async function buildIdleTalkPrompt(): Promise<string | null> {
     // Check if we should continue from previous response
-    if (config.continueContext
-      && lastResponse.value
-      && contextContinuationCount.value < config.maxContextContinuation) {
-      console.info('[IdleTalk] Building continuation prompt')
-      console.info(`[IdleTalk] Continuation count: ${contextContinuationCount.value + 1}/${config.maxContextContinuation}`)
-      console.info(`[IdleTalk] Previous response: ${lastResponse.value.substring(0, 50)}...`)
-
-      // Search for related knowledge to enrich the continuation
-      let relatedKnowledge = ''
-      try {
-        const relatedResults = await knowledgeDB.queryKnowledge(lastResponse.value, {
-          limit: 3,
-          threshold: 0.6,
-        })
-
-        if (relatedResults && relatedResults.results.length > 0) {
-          console.info(`[IdleTalk] Found ${relatedResults.results.length} related knowledge items`)
-          relatedKnowledge = `\n【あなたの関連する過去の発言】\n${
-            relatedResults.results
-              .map(k => `- ${k.content.substring(0, 100)}${k.content.length > 100 ? '...' : ''}`)
-              .join('\n')
-          }\n`
-        }
-      }
-      catch (error) {
-        console.warn('[IdleTalk] Failed to fetch related knowledge, continuing without it', error)
-      }
-
-      // Increment continuation counter
-      contextContinuationCount.value++
-
-      return `前回あなたはこう話しました：
-「${lastResponse.value}」
-${relatedKnowledge}
-この話題について、さらに深掘りして200文字程度で話してください。
-自然な会話の流れで、関連する思い出や考えを加えてください。
-「さっきの話の続きだけど」のような前置きは不要です。直接内容に入ってください。`
+    if (topicContinuation.shouldContinue()) {
+      return await topicContinuation.buildContinuationPrompt()
     }
 
     // Reset context when max continuation is reached
-    if (contextContinuationCount.value >= config.maxContextContinuation) {
+    if (topicContinuation.isMaxReached()) {
       console.info('[IdleTalk] Max context continuation reached, resetting to new topic')
-      lastResponse.value = null
-      initialTopic.value = null
-      contextContinuationCount.value = 0
+      topicContinuation.resetContext()
     }
 
     // Start with a new random topic
@@ -336,17 +337,17 @@ ${relatedKnowledge}
       return null
     }
 
-    // Store initial topic for drift detection (future use)
-    initialTopic.value = topic.content
-    contextContinuationCount.value = 0
+    // Store initial topic
+    topicContinuation.storeResponse(topic.content, true)
 
-    return `コメントが無いので、以下の話題をテーマに自由にリスナーに対して話してください：
+    // Load instruction from file
+    const instruction = await loadInitialTopicInstruction()
+
+    return `コメントが無いので、以下の話題をテーマに話してください：
 
 話題: ${topic.content}
 
-この話題について、あなたの考えや思い出を200文字程度で話してください。
-話し始める前に雑談を始める前にふさわしい前置きをつけてください。
-ただし、リスナーへの挨拶等は不要です`
+${instruction}`
   }
 
   /**
@@ -379,9 +380,7 @@ ${relatedKnowledge}
       }
 
       // Clear previous topic context when user sends a new message
-      lastResponse.value = null
-      initialTopic.value = null
-      contextContinuationCount.value = 0
+      topicContinuation.resetContext()
       console.info('[IdleTalk] User input detected, cleared previous topic context')
     }, { persistent: true })
 
@@ -392,8 +391,7 @@ ${relatedKnowledge}
       console.info('[IdleTalk] Assistant response ended, storing response for continuation')
 
       // Store the assistant's response for topic continuation
-      lastResponse.value = fullText
-      console.info(`[IdleTalk] Stored response: ${fullText.substring(0, 50)}...`)
+      topicContinuation.storeResponse(fullText)
 
       // Reset timer with context preservation
       // Whether it was user input or idle talk doesn't matter - we continue the topic

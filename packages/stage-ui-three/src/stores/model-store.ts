@@ -78,12 +78,16 @@ export const useModelStore = defineStore('modelStore', () => {
     }
   })
 
-  const scale = useLocalStorage('settings/stage-ui-three/scale', 1)
+  const scale = useLocalStorage('settings/stage-ui-three/scale', Number(import.meta.env.VITE_AVATAR_SCALE) || 1)
   const lastModelSrc = useLocalStorage('settings/stage-ui-three/lastModelSrc', '')
 
   const modelSize = useLocalStorage('settings/stage-ui-three/modelSize', { x: 0, y: 0, z: 0 })
   const modelOrigin = useLocalStorage('settings/stage-ui-three/modelOrigin', { x: 0, y: 0, z: 0 })
-  const modelOffset = useLocalStorage('settings/stage-ui-three/modelOffset', { x: 0, y: 0, z: 0 })
+  const modelOffset = useLocalStorage('settings/stage-ui-three/modelOffset', {
+    x: Number(import.meta.env.VITE_AVATAR_POSITION_X) || 0,
+    y: Number(import.meta.env.VITE_AVATAR_POSITION_Y) || 0,
+    z: 0,
+  })
   const modelRotationY = useLocalStorage('settings/stage-ui-three/modelRotationY', 0)
 
   const cameraFOV = useLocalStorage('settings/stage-ui-three/cameraFOV', 40)

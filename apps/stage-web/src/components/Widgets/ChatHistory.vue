@@ -42,7 +42,8 @@ onTokenLiteral(async () => {
     <div ref="chatHistoryRef" v-auto-animate px="<sm:2" flex="~ col" h-full w-full overflow-scroll px-4>
       <div flex-1 /> <!-- spacer -->
       <div v-for="(message, index) in messages" :key="index" mb-2>
-        <div v-if="message.role === 'error'" flex mr="12">
+        <!-- Skip messages marked as hidden in UI (internal prompts) -->
+        <div v-if="message.role === 'error' && !(message as any)._hideInUI" flex mr="12">
           <div
             flex="~ col" shadow="md violet-900/50 dark:none"
             min-w-20 rounded-lg px-2 py-1 h="unset <sm:fit"
@@ -63,7 +64,7 @@ onTokenLiteral(async () => {
             />
           </div>
         </div>
-        <div v-if="message.role === 'assistant' && streamingMode.showLLMResponses" flex mr="12">
+        <div v-if="message.role === 'assistant' && streamingMode.showLLMResponses && !(message as any)._hideInUI" flex mr="12">
           <div
             flex="~ col" shadow="sm primary-200/50 dark:none" min-w-20
             rounded-lg px-2 py-1 h="unset <sm:fit"
@@ -91,7 +92,7 @@ onTokenLiteral(async () => {
             <div v-else-if="index === messages.length - 1 && !message.content" i-eos-icons:three-dots-loading />
           </div>
         </div>
-        <div v-else-if="message.role === 'user'" flex="~ row-reverse" ml="12">
+        <div v-else-if="message.role === 'user' && !(message as any)._hideInUI" flex="~ row-reverse" ml="12">
           <div
             flex="~ col" shadow="sm cyan-200/50 dark:none" px="2"
             h="unset <sm:fit" min-w-20 rounded-lg px-2 py-1
