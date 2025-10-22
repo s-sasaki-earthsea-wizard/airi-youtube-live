@@ -9,6 +9,8 @@
  * Output: ["動物", "ペット", "犬", "猫", "好き"]
  */
 
+import process from 'node:process'
+
 import { ref } from 'vue'
 
 export interface QueryExpansionConfig {
@@ -26,13 +28,20 @@ export interface ExpandedQuery {
 
 /**
  * Get query expansion configuration from environment variables
+ *
+ * Note: Supports both Vite (import.meta.env) and Node.js (process.env) environments
  */
 function getQueryExpansionConfig(): QueryExpansionConfig {
+  // Support both Vite and Node.js environments
+  const env = typeof import.meta !== 'undefined' && import.meta.env
+    ? import.meta.env
+    : process.env
+
   return {
-    enabled: import.meta.env.VITE_QUERY_EXPANSION_ENABLED === 'true',
-    model: import.meta.env.VITE_QUERY_EXPANSION_MODEL || 'google/gemini-2.0-flash-exp:free',
-    apiKey: import.meta.env.VITE_LLM_API_KEY || '',
-    baseUrl: import.meta.env.VITE_LLM_BASE_URL || 'https://openrouter.ai/api/v1/',
+    enabled: env.VITE_QUERY_EXPANSION_ENABLED === 'true',
+    model: env.VITE_QUERY_EXPANSION_MODEL || 'google/gemini-2.0-flash-exp:free',
+    apiKey: env.VITE_LLM_API_KEY || '',
+    baseUrl: env.VITE_LLM_BASE_URL || 'https://openrouter.ai/api/v1/',
   }
 }
 

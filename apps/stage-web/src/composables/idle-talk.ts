@@ -24,7 +24,7 @@ import { useConsciousnessStore } from '@proj-airi/stage-ui/stores/modules/consci
 import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
 import { ref } from 'vue'
 
-import { useKnowledgeDB } from './useKnowledgeDB'
+import { useKnowledgeDB } from './knowledge'
 import { useTopicContinuation } from './useTopicContinuation'
 
 export interface IdleTalkConfig {

@@ -1,7 +1,7 @@
 .PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube test-message stop stop-all \
         db-setup db-start db-stop db-restart db-status db-export db-sync-discord db-danger-clear-all \
         collect-discord collect-discord-stop collect-discord-restart \
-        test-query-expansion
+        test-query-expansion test-expanded-search test-search
 
 # デフォルトターゲット: ヘルプを表示
 help:
@@ -20,7 +20,9 @@ help:
 	@echo "  make stop             - Stop all services"
 	@echo ""
 	@echo "テスト:"
-	@echo "  make test-query-expansion - Test LLM-based query expansion for Knowledge DB"
+	@echo "  make test-query-expansion          - Test LLM-based query expansion"
+	@echo "  make test-expanded-search          - Test expanded search with Knowledge DB"
+	@echo "  make test-search QUERY='質問文'    - Test single expanded search query"
 	@echo ""
 	@echo "Knowledge DB:"
 	@echo "  make db-setup              - Initial setup (install deps + start DB + apply schema)"
@@ -120,6 +122,28 @@ test-query-expansion:
 	@echo "🧪 Testing Query Expansion feature..."
 	@echo ""
 	@cd apps/stage-web && pnpm tsx src/test-query-expansion.ts
+
+# Expanded Search テスト（Query Expansion + Knowledge DB統合）
+test-expanded-search:
+	@echo "🧪 Testing Expanded Search with Knowledge DB..."
+	@echo ""
+	@echo "Note: Make sure Knowledge DB service is running (make db-start)"
+	@echo ""
+	@cd apps/stage-web && pnpm tsx src/test-expanded-search.ts --limit 5 --threshold 0.4 --max-keywords 5
+
+# 単一クエリでの拡張検索テスト（引数指定）
+test-search:
+	@if [ -z "$(QUERY)" ]; then \
+		echo "❌ Error: QUERY is required"; \
+		echo ""; \
+		echo "Usage: make test-search QUERY='好きな動物は？'"; \
+		exit 1; \
+	fi
+	@echo "🔍 Testing expanded search for: $(QUERY)"
+	@echo ""
+	@echo "Note: Make sure Knowledge DB service is running (make db-start)"
+	@echo ""
+	@cd apps/stage-web && pnpm tsx -e "import { useExpandedSearch } from './src/composables/knowledge'; (async () => { const { searchWithExpansion } = useExpandedSearch(); const result = await searchWithExpansion('$(QUERY)'); console.log(JSON.stringify(result, null, 2)); })().catch(console.error);"
 
 # ========================================
 # Knowledge DB Commands

@@ -15,9 +15,9 @@ import MobileInteractiveArea from '../components/Layouts/MobileInteractiveArea.v
 import AnimatedWave from '../components/Widgets/AnimatedWave.vue'
 
 import { isCurrentlyIdleTalking } from '../composables/idle-talk'
+import { useKnowledgeDBIntegration } from '../composables/knowledge'
 import { useStreamingMode } from '../composables/streaming-mode'
 import { themeColorFromPropertyOf, useThemeColor } from '../composables/theme-color'
-import { useKnowledgeDBIntegration } from '../composables/useKnowledgeDBIntegration'
 
 const streamingMode = useStreamingMode()
 const dark = useDark()

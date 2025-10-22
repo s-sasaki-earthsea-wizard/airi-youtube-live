@@ -11,41 +11,7 @@
 
 import process from 'node:process'
 
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
-
-// Load .env file manually
-function loadEnvFile() {
-  try {
-    const envPath = join(process.cwd(), '.env')
-    const envContent = readFileSync(envPath, 'utf-8')
-    const envVars: Record<string, string> = {}
-
-    envContent.split('\n').forEach((line) => {
-      const trimmed = line.trim()
-      if (!trimmed || trimmed.startsWith('#')) {
-        return
-      }
-
-      const match = trimmed.match(/^([^=]+)=(.*)$/)
-      if (match) {
-        const key = match[1].trim()
-        let value = match[2].trim()
-        // Remove quotes if present
-        if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith('\'') && value.endsWith('\''))) {
-          value = value.slice(1, -1)
-        }
-        envVars[key] = value
-      }
-    })
-
-    return envVars
-  }
-  catch (err) {
-    console.error('Failed to load .env file:', err)
-    return {}
-  }
-}
+import { loadEnvFile } from './utils/test-helpers'
 
 const envFile = loadEnvFile()
 

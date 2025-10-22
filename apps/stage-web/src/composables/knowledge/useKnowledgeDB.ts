@@ -5,6 +5,8 @@
  * Queries the vector similarity search endpoint to find relevant character knowledge.
  */
 
+import process from 'node:process'
+
 import { ref } from 'vue'
 
 export interface KnowledgeResult {
@@ -32,13 +34,20 @@ export interface KnowledgeDBConfig {
 
 /**
  * Get knowledge DB configuration from environment variables
+ *
+ * Note: Supports both Vite (import.meta.env) and Node.js (process.env) environments
  */
 function getKnowledgeDBConfig(): KnowledgeDBConfig {
+  // Support both Vite and Node.js environments
+  const env = typeof import.meta !== 'undefined' && import.meta.env
+    ? import.meta.env
+    : process.env
+
   return {
-    enabled: import.meta.env.VITE_KNOWLEDGE_DB_ENABLED === 'true',
-    url: import.meta.env.VITE_KNOWLEDGE_DB_URL || 'http://localhost:3100',
-    limit: Number.parseInt(import.meta.env.VITE_KNOWLEDGE_DB_LIMIT || '3', 10),
-    threshold: Number.parseFloat(import.meta.env.VITE_KNOWLEDGE_DB_THRESHOLD || '0.3'),
+    enabled: env.VITE_KNOWLEDGE_DB_ENABLED === 'true',
+    url: env.VITE_KNOWLEDGE_DB_URL || 'http://localhost:3100',
+    limit: Number.parseInt(env.VITE_KNOWLEDGE_DB_LIMIT || '3', 10),
+    threshold: Number.parseFloat(env.VITE_KNOWLEDGE_DB_THRESHOLD || '0.3'),
   }
 }
 
