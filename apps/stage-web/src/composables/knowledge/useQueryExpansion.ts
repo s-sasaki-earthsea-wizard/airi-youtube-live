@@ -49,6 +49,54 @@ export function useQueryExpansion() {
   const config = getQueryExpansionConfig()
   const isLoading = ref(false)
   const error = ref<Error | null>(null)
+  const instructionText = ref<string | null>(null)
+
+  /**
+   * Load instruction text from file
+   * Loads once and caches the result
+   *
+   * Supports both browser (fetch) and Node.js (fs) environments
+   */
+  async function loadInstructionText(): Promise<string> {
+    // Return cached version if already loaded
+    if (instructionText.value !== null) {
+      return instructionText.value
+    }
+
+    try {
+      // Check if we're in Node.js environment
+      const isNode = typeof process !== 'undefined' && process.versions?.node
+
+      let text: string
+
+      if (isNode) {
+        // Node.js environment: use fs.readFileSync
+        const { readFileSync } = await import('node:fs')
+        const { join } = await import('node:path')
+        const filePath = join(process.cwd(), 'public/prompts/query-expansion-instruction.md')
+        text = readFileSync(filePath, 'utf-8')
+      }
+      else {
+        // Browser environment: use fetch
+        const response = await fetch('/prompts/query-expansion-instruction.md')
+        if (!response.ok) {
+          throw new Error(`Failed to load query expansion instruction: ${response.status}`)
+        }
+        text = await response.text()
+      }
+
+      instructionText.value = text
+      return text
+    }
+    catch (err) {
+      console.warn('[useQueryExpansion] Failed to load instruction file, using default', err)
+      // Fallback to simple default instruction
+      const defaultInstruction = `次の質問から検索に役立つキーワードを抽出してください。
+具体的な固有名詞やカテゴリ名を優先し、抽象的な類義語は避けてください。`
+      instructionText.value = defaultInstruction
+      return defaultInstruction
+    }
+  }
 
   /**
    * Expand a query into multiple related keywords using LLM with JSON mode
@@ -86,6 +134,9 @@ export function useQueryExpansion() {
     try {
       console.info(`[useQueryExpansion] Expanding query: "${query}"`)
 
+      // Load instruction text
+      const instruction = await loadInstructionText()
+
       const response = await fetch(`${config.baseUrl}chat/completions`, {
         method: 'POST',
         headers: {
@@ -99,20 +150,11 @@ export function useQueryExpansion() {
           messages: [
             {
               role: 'user',
-              content: `次の質問から検索に役立つキーワードを最大${maxKeywords}個抽出してください。
+              content: `${instruction}
 
 質問: ${query}
 
-条件:
-- 質問の主題に関連する単語を含める
-- 類義語や関連語も含める
-- 1単語または2-3文字の短いフレーズにする
-- 重複を避ける
-- 日本語で出力する
-
-例:
-質問: "好きな食べ物は？"
-キーワード: ["食べ物", "好き", "料理", "グルメ", "食事"]`,
+最大キーワード数: ${maxKeywords}個`,
             },
           ],
           response_format: {
