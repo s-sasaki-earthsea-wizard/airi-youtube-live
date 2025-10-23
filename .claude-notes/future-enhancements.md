@@ -1397,6 +1397,87 @@ config-restore:
 
 ---
 
-**最終更新**: 2025-10-17
+## Query Expansion機能の改善案
+
+### 背景
+
+2025-10-22にPhase 1としてLLMベースのクエリ拡張機能を実装しました。現在の実装では、キーワード数などの設定がハードコードされており、柔軟性に欠ける部分があります。
+
+### 現状の制限
+
+- **maxKeywords**: ハードコード（デフォルト: 5個）
+  - [useQueryExpansion.ts:53](apps/stage-web/src/composables/useQueryExpansion.ts#L53)
+  - [useQueryExpansion.ts:178](apps/stage-web/src/composables/useQueryExpansion.ts#L178)
+- 環境変数での調整ができない
+
+### 提案：環境変数による設定の柔軟化
+
+#### 追加する環境変数
+
+```bash
+# apps/stage-web/.env
+
+# Query Expansion Feature
+VITE_QUERY_EXPANSION_ENABLED=true
+VITE_QUERY_EXPANSION_MODEL=google/gemini-2.0-flash-lite-001
+VITE_QUERY_EXPANSION_MAX_KEYWORDS=5          # ← 追加
+```
+
+#### 修正対象ファイル
+
+**apps/stage-web/src/composables/useQueryExpansion.ts**
+
+```typescript
+export interface QueryExpansionConfig {
+  enabled: boolean
+  model: string
+  maxKeywords: number  // ← 追加
+  apiKey: string
+  baseUrl: string
+}
+
+function getQueryExpansionConfig(): QueryExpansionConfig {
+  return {
+    enabled: import.meta.env.VITE_QUERY_EXPANSION_ENABLED === 'true',
+    model: import.meta.env.VITE_QUERY_EXPANSION_MODEL || 'google/gemini-2.0-flash-lite-001',
+    maxKeywords: Number.parseInt(import.meta.env.VITE_QUERY_EXPANSION_MAX_KEYWORDS || '5', 10),  // ← 追加
+    apiKey: import.meta.env.VITE_LLM_API_KEY || '',
+    baseUrl: import.meta.env.VITE_LLM_BASE_URL || 'https://openrouter.ai/api/v1/',
+  }
+}
+
+// expandQuery() のデフォルト引数を設定値に変更
+async function expandQuery(
+  query: string,
+  maxKeywords: number = config.maxKeywords,  // ← 修正
+): Promise<string[] | null>
+```
+
+### メリット
+
+1. **柔軟性**: キーワード数を実行時に調整可能
+2. **実験性**: A/Bテストが容易（3個 vs 5個 vs 10個）
+3. **コスト最適化**: キーワード数を減らせばLLMトークン消費が削減
+4. **後方互換性**: 環境変数がない場合はデフォルト（5個）を使用
+
+### デメリット
+
+- 設定項目が増える（ただし、現時点では必要性が低い）
+
+### 実装優先度
+
+- **Priority**: Low
+- **Effort**: Small (15-30分)
+- **Impact**: Low-Medium
+- **Status**: 設計完了、YAGNI原則に基づき実装は保留
+- **実装タイミング**: 「5個では不足」という実データが出た時点で実装
+
+### 関連セッション
+
+- [2025-10-22: Knowledge DB Query Expansion Implementation](./.claude-notes/sessions/2025-10-22-knowledge-query-expansion.md)
+
+---
+
+**最終更新**: 2025-10-22
 **ステータス**: 設計完了
 **実装見積もり**: 2-4時間

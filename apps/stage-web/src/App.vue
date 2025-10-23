@@ -18,8 +18,7 @@ import { toast, Toaster } from 'vue-sonner'
 import LicenseNotice from './components/LicenseNotice.vue'
 
 import { useIdleTalk } from './composables/idle-talk'
-import { useKnowledgeDB } from './composables/useKnowledgeDB'
-import { useKnowledgeDBIntegration } from './composables/useKnowledgeDBIntegration'
+import { useKnowledgeDB, useKnowledgeDBIntegration } from './composables/knowledge'
 import { useWebSocketClient } from './composables/websocket-client'
 import { usePWAStore } from './stores/pwa'
 

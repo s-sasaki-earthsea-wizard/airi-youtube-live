@@ -18,7 +18,7 @@
 
 import { ref } from 'vue'
 
-import { useKnowledgeDB } from './useKnowledgeDB'
+import { useKnowledgeDB } from './knowledge'
 
 export interface TopicContinuationConfig {
   maxContinuation: number
