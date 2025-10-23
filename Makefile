@@ -1,7 +1,7 @@
 .PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube test-message stop stop-all \
         db-setup db-start db-stop db-restart db-status db-export db-sync-discord db-danger-clear-all \
         collect-discord collect-discord-stop collect-discord-restart \
-        test-query-expansion test-expanded-search test-search
+        test-query-expansion test-expanded-search test-reranking-search test-search
 
 # デフォルトターゲット: ヘルプを表示
 help:
@@ -22,6 +22,7 @@ help:
 	@echo "テスト:"
 	@echo "  make test-query-expansion          - Test LLM-based query expansion"
 	@echo "  make test-expanded-search          - Test expanded search with Knowledge DB"
+	@echo "  make test-reranking-search         - Test expanded search with LLM reranking"
 	@echo "  make test-search QUERY='質問文'    - Test single expanded search query"
 	@echo ""
 	@echo "Knowledge DB:"
@@ -130,6 +131,16 @@ test-expanded-search:
 	@echo "Note: Make sure Knowledge DB service is running (make db-start)"
 	@echo ""
 	@cd apps/stage-web && pnpm tsx src/test-expanded-search.ts --limit 5 --threshold 0.4 --max-keywords 5
+
+# Test expanded search with LLM-based reranking
+test-reranking-search:
+	@echo "🧪 Testing Expanded Search with LLM Reranking..."
+	@echo ""
+	@echo "Note: Make sure Knowledge DB service is running (make db-start)"
+	@echo ""
+	@echo "Pipeline: Query Expansion → Relaxed Search → LLM Reranking"
+	@echo ""
+	@cd apps/stage-web && pnpm tsx src/test-reranking-search.ts --limit 10 --threshold 0.25 --max-keywords 10 --rerank-top-k 10
 
 # 単一クエリでの拡張検索テスト（引数指定）
 test-search:

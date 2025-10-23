@@ -30,3 +30,5 @@ export type {
   ExpandedQuery,
   QueryExpansionConfig,
 } from './useQueryExpansion'
+
+export { useReranking } from './useReranking'
