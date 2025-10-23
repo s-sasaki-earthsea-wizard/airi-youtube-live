@@ -15,7 +15,7 @@ import MobileInteractiveArea from '../components/Layouts/MobileInteractiveArea.v
 import AnimatedWave from '../components/Widgets/AnimatedWave.vue'
 
 import { isCurrentlyIdleTalking } from '../composables/idle-talk'
-import { useKnowledgeDBIntegration } from '../composables/knowledge'
+import { useExpandedSearch, useKnowledgeDBIntegration, useReranking } from '../composables/knowledge'
 import { useStreamingMode } from '../composables/streaming-mode'
 import { themeColorFromPropertyOf, useThemeColor } from '../composables/theme-color'
 
@@ -38,6 +38,8 @@ watch(dark, () => updateThemeColor(), { immediate: true })
 const chatStore = useChatStore()
 const airiCardStore = useAiriCardStore()
 const knowledgeDBIntegration = useKnowledgeDBIntegration()
+const { searchWithExpansion } = useExpandedSearch()
+const { rerankResults } = useReranking()
 
 onMounted(() => {
   updateThemeColor()
@@ -67,18 +69,33 @@ onMounted(() => {
       try {
         const { baseSystemPrompt, knowledgeDB } = integrationState
 
-        // Query knowledge database for relevant information
-        const knowledgeResponse = await knowledgeDB!.queryKnowledge(userMessage)
+        // Query knowledge database with expanded search + reranking
+        const searchResult = await searchWithExpansion(userMessage)
 
-        if (knowledgeResponse && knowledgeResponse.results.length > 0) {
+        if (searchResult.response && searchResult.response.results.length > 0) {
+          // Apply LLM reranking to select the most relevant results
+          const rerankedResults = await rerankResults(
+            userMessage,
+            searchResult.response.results,
+            {
+              topK: Number.parseInt(import.meta.env.VITE_RERANKING_TOP_K || '10', 10),
+              includeReasoning: false,
+            },
+          )
+
+          console.info(
+            `[index.vue] Reranked ${rerankedResults.length} results from ${searchResult.response.total} candidates`,
+            searchResult.expandedKeywords ? `(keywords: ${searchResult.expandedKeywords.join(', ')})` : '',
+          )
+
           // Format knowledge and inject into system prompt
-          const knowledgeContext = await knowledgeDB!.formatKnowledgeForPrompt(knowledgeResponse.results)
+          const knowledgeContext = await knowledgeDB!.formatKnowledgeForPrompt(rerankedResults)
 
           // Update the system prompt with knowledge context
           const defaultCard = airiCardStore.getCard('default')
           if (defaultCard) {
             defaultCard.description = baseSystemPrompt + knowledgeContext
-            console.info(`[index.vue] Injected ${knowledgeResponse.total} knowledge results into system prompt`)
+            console.info(`[index.vue] Injected ${rerankedResults.length} reranked knowledge results into system prompt`)
           }
         }
         else {
@@ -91,7 +108,7 @@ onMounted(() => {
         }
       }
       catch (error) {
-        console.error('[index.vue] Failed to query knowledge DB:', error)
+        console.error('[index.vue] Failed to query knowledge DB with reranking:', error)
         // Continue with original system prompt on error
       }
     }, { persistent: true }) // Mark this hook as persistent
