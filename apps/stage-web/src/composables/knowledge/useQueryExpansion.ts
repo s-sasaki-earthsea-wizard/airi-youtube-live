@@ -65,11 +65,12 @@ export function useQueryExpansion() {
 
     try {
       // Check if we're in Node.js environment
-      const isNode = typeof process !== 'undefined' && process.versions?.node
+      // In browser, import.meta.env is available, in Node it's not
+      const isBrowser = typeof import.meta !== 'undefined' && import.meta.env !== undefined
 
       let text: string
 
-      if (isNode) {
+      if (!isBrowser) {
         // Node.js environment: use fs.readFileSync
         const { readFileSync } = await import('node:fs')
         const { join } = await import('node:path')
