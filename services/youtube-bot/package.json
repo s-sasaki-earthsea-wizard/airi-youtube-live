@@ -16,6 +16,8 @@
   "scripts": {
     "start": "dotenvx run -f .env -f .env.local --overload --ignore=MISSING_ENV_FILE -- tsx src/index.ts",
     "test-message": "dotenvx run -f .env -f .env.local --overload --ignore=MISSING_ENV_FILE -- tsx src/test-message.ts",
+    "test-comment-filter": "tsx tests/comment-filter.test.ts",
+    "test-comment-filter:interactive": "tsx tests/comment-filter.test.ts --interactive",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

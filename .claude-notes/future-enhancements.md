@@ -136,9 +136,357 @@ class AdaptivePoller {
 - ストリーム間でのリソース共有
 
 ### 高度なメッセージフィルタリング
-- スパム検出
-- ユーザーブラックリスト
-- 不適切なコンテンツのフィルタリング
+
+#### ✅ Phase 1: ルールベースフィルタリング（実装完了 - 2025-10-27）
+
+**実装内容:**
+- ノイズパターンマッチング（`www`, `草`, `笑笑笑`, `lolol`, `88888`など）
+- 短すぎるコメント除外（デフォルト: 3文字未満）
+- 記号のみのコメント除外
+- ノイズワードフィルター（`ウケる`, `面白い`, `へー`など）
+- ホワイトリスト機能（質問形式、15文字以上は通過）
+- 環境変数での柔軟な制御
+- テストスイート（37ケース、100%合格）
+
+**実装ファイル:**
+- `services/youtube-bot/src/filters/comment-filter.ts`
+- `services/youtube-bot/tests/comment-filter.test.ts`
+
+**環境変数:**
+```bash
+COMMENT_FILTER_ENABLED=true
+COMMENT_FILTER_MIN_LENGTH=3
+COMMENT_FILTER_LOG_FILTERED=true
+COMMENT_FILTER_CUSTOM_NOISE_WORDS=
+```
+
+**詳細:**
+- [セッションノート: 2025-10-27-comment-filter.md](./.claude-notes/sessions/2025-10-27-comment-filter.md)
+
+---
+
+#### 📋 Phase 2: Embeddingベース分類（検討中）
+
+**目的:**
+- ルールベースで判定が難しい微妙なコメントの分類
+- 文脈を考慮したフィルタリング
+
+**技術的アプローチ:**
+
+##### 方式A: 事前学習済みサンプルベース分類
+
+```typescript
+// services/youtube-bot/src/filters/embedding-classifier.ts
+
+interface CommentSample {
+  text: string
+  category: 'meaningful' | 'noise'
+}
+
+const TRAINING_SAMPLES: CommentSample[] = [
+  // ノイズサンプル
+  { text: 'www', category: 'noise' },
+  { text: '草', category: 'noise' },
+  { text: 'ウケる', category: 'noise' },
+
+  // 有意義なサンプル
+  { text: 'この曲何ですか？', category: 'meaningful' },
+  { text: '今日の配信面白いですね', category: 'meaningful' },
+]
+
+class EmbeddingClassifier {
+  private sampleEmbeddings: Map<string, number[]> = new Map()
+
+  async initialize() {
+    for (const sample of TRAINING_SAMPLES) {
+      const embedding = await this.embedText(sample.text)
+      this.sampleEmbeddings.set(`${sample.category}:${sample.text}`, embedding)
+    }
+  }
+
+  async classify(text: string): Promise<'meaningful' | 'noise'> {
+    const queryEmbedding = await this.embedText(text)
+
+    // 各カテゴリとの平均類似度を計算
+    const meaningfulScores: number[] = []
+    const noiseScores: number[] = []
+
+    for (const [key, sampleEmbedding] of this.sampleEmbeddings.entries()) {
+      const similarity = this.cosineSimilarity(queryEmbedding, sampleEmbedding)
+
+      if (key.startsWith('meaningful:')) {
+        meaningfulScores.push(similarity)
+      } else {
+        noiseScores.push(similarity)
+      }
+    }
+
+    const avgMeaningful = this.average(meaningfulScores)
+    const avgNoise = this.average(noiseScores)
+
+    return avgMeaningful > avgNoise ? 'meaningful' : 'noise'
+  }
+
+  private cosineSimilarity(a: number[], b: number[]): number {
+    let dotProduct = 0
+    let normA = 0
+    let normB = 0
+
+    for (let i = 0; i < a.length; i++) {
+      dotProduct += a[i] * b[i]
+      normA += a[i] * a[i]
+      normB += b[i] * b[i]
+    }
+
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB))
+  }
+
+  private async embedText(text: string): Promise<number[]> {
+    const result = await embed({
+      baseURL: process.env.EMBEDDING_API_BASE_URL!,
+      apiKey: process.env.EMBEDDING_API_KEY!,
+      model: 'text-embedding-3-small',
+      input: text,
+    })
+    return result.embedding
+  }
+}
+```
+
+**コスト試算:**
+```
+初期サンプル化: 50サンプル × $0.00002 = $0.001
+月次運用: 100コメント/配信 × 30配信 × $0.00002 = $0.06/月
+```
+
+**メリット:**
+- 文脈を考慮した分類
+- ルールベースで判定困難なケースに対応
+
+**デメリット:**
+- APIコスト（月額$0.06程度）
+- レイテンシ増加（50-200ms）
+
+---
+
+##### 方式B: Knowledge DBベース分類
+
+既存のKnowledge DBインフラを活用：
+
+```typescript
+// services/knowledge-db/src/db/schema.ts に追加
+
+export const commentSamplesTable = pgTable('comment_samples', {
+  id: uuid().primaryKey().defaultRandom(),
+  text: text().notNull(),
+  category: text().notNull(), // 'meaningful' or 'noise'
+  embedding_vector: vector({ dimensions: 1536 }),
+  created_at: bigint({ mode: 'number' }).notNull(),
+}, table => [
+  index('comment_samples_embedding_index').using('hnsw', table.embedding_vector.op('vector_cosine_ops')),
+])
+```
+
+```typescript
+// services/knowledge-db/src/index.ts
+
+app.post('/classify-comment', async (c) => {
+  const { text } = await c.req.json()
+
+  const embeddingResult = await embed({
+    baseURL: env.EMBEDDING_API_BASE_URL!,
+    apiKey: env.EMBEDDING_API_KEY!,
+    model: env.EMBEDDING_MODEL!,
+    input: text,
+  })
+
+  const queryVector = embeddingResult.embedding
+  const vectorString = `[${queryVector.join(',')}]`
+
+  // 最も類似するサンプルを検索（top-5）
+  const results = await db
+    .select({
+      category: commentSamplesTable.category,
+      text: commentSamplesTable.text,
+      similarity: sql<number>`1 - (${commentSamplesTable.embedding_vector} <=> ${vectorString}::vector)`,
+    })
+    .from(commentSamplesTable)
+    .orderBy(sql`${commentSamplesTable.embedding_vector} <=> ${vectorString}::vector`)
+    .limit(5)
+
+  // 多数決で判定
+  const categoryCount = results.reduce((acc, r) => {
+    acc[r.category] = (acc[r.category] || 0) + 1
+    return acc
+  }, {} as Record<string, number>)
+
+  const category = categoryCount['meaningful'] > categoryCount['noise']
+    ? 'meaningful'
+    : 'noise'
+
+  return c.json({ category, topMatches: results })
+})
+```
+
+**メリット:**
+- 既存インフラ活用
+- HNSWで高速検索
+- サンプル追加が容易
+
+**デメリット:**
+- DB依存
+- 初期セットアップが必要
+
+---
+
+##### 方式C: ハイブリッド方式（推奨）
+
+ルールベース→Embedding→LLM の段階的フィルタリング：
+
+```typescript
+// services/youtube-bot/src/filters/hybrid-comment-filter.ts
+
+class HybridCommentFilter {
+  private ruleBasedFilter: CommentFilter
+  private embeddingClassifier: EmbeddingClassifier
+
+  async shouldRespond(text: string): Promise<{
+    shouldRespond: boolean
+    reason: string
+    stage: 'rule' | 'embedding' | 'length' | 'question'
+  }> {
+    // Stage 1: ルールベース（明らかなノイズ）
+    const ruleResult = this.ruleBasedFilter.shouldRespond(text)
+    if (!ruleResult.shouldRespond) {
+      return {
+        shouldRespond: false,
+        reason: ruleResult.reason,
+        stage: 'rule',
+      }
+    }
+
+    // Stage 2: 明らかに有意義（質問形式）
+    if (text.includes('?') || text.includes('？')) {
+      return {
+        shouldRespond: true,
+        reason: 'Question detected',
+        stage: 'question',
+      }
+    }
+
+    // Stage 3: 長いコメント（15文字以上）
+    if (text.trim().length >= 15) {
+      return {
+        shouldRespond: true,
+        reason: 'Long comment (likely meaningful)',
+        stage: 'length',
+      }
+    }
+
+    // Stage 4: Embedding分類（短い曖昧なコメント）
+    if (process.env.COMMENT_FILTER_EMBEDDING_ENABLED === 'true') {
+      const category = await this.embeddingClassifier.classify(text)
+      return {
+        shouldRespond: category === 'meaningful',
+        reason: `Embedding classification: ${category}`,
+        stage: 'embedding',
+      }
+    }
+
+    // デフォルトは応答する（安全側に倒す）
+    return {
+      shouldRespond: true,
+      reason: 'Default behavior',
+      stage: 'rule',
+    }
+  }
+}
+```
+
+**環境変数:**
+```bash
+# Phase 1（ルールベース）- 既に実装済み
+COMMENT_FILTER_ENABLED=true
+COMMENT_FILTER_MIN_LENGTH=3
+
+# Phase 2（Embedding） - 将来実装
+COMMENT_FILTER_EMBEDDING_ENABLED=false
+COMMENT_FILTER_EMBEDDING_THRESHOLD=0.7
+```
+
+**段階的導入:**
+```
+Phase 1: ルールベースのみ（現在）→ 80%のノイズ除去
+  ↓ 本番ログ収集
+Phase 2: パターン追加・調整 → 90%のノイズ除去
+  ↓ まだ不十分な場合のみ
+Phase 3: Embedding追加 → 95%のノイズ除去
+```
+
+---
+
+#### 🔮 Phase 3: LLMベース分類（将来構想）
+
+**目的:**
+- 極めて微妙なケースの判定
+- 文脈と意図を深く理解
+
+**技術的アプローチ:**
+
+```typescript
+async function classifyCommentWithLLM(text: string): Promise<'meaningful' | 'reaction' | 'spam'> {
+  const prompt = `以下のYouTubeライブチャットコメントを分類してください。
+
+コメント: "${text}"
+
+分類カテゴリ:
+- meaningful: 質問、意見、会話を求めるコメント
+- reaction: 感情表現だけのリアクション（「www」「ウケる」「888」など）
+- spam: スパム、無意味な連投
+
+JSON形式で返答してください:
+{"category": "meaningful|reaction|spam", "confidence": 0.0-1.0}`
+
+  const response = await llm.generate(prompt)
+  const result = JSON.parse(response)
+
+  return result.category
+}
+```
+
+**コスト試算:**
+```
+100コメント/配信 × 30配信 × $0.003/コメント = $9/月
+```
+
+**メリット:**
+- 最高精度の分類
+- 柔軟な判定基準
+
+**デメリット:**
+- 高コスト（月額$9）
+- 高レイテンシ（500-2000ms）
+- API依存
+
+---
+
+#### 実装優先度
+
+| Phase | 優先度 | 工数 | コスト | 実装タイミング |
+|-------|--------|------|--------|--------------|
+| Phase 1（ルールベース） | High | 完了 | $0 | ✅ 実装済み |
+| Phase 2（Embedding） | Low | 2-3日 | $0.06/月 | 本番ログで必要性確認後 |
+| Phase 3（LLM） | Very Low | 1日 | $9/月 | Phase 2でも不十分な場合のみ |
+
+---
+
+#### その他の高度なフィルタリング機能
+
+以下は将来的に検討する追加機能：
+
+- **スパム検出**: 同一ユーザーからの短時間での連投検出
+- **ユーザーブラックリスト**: 特定ユーザーのコメントを除外
+- **不適切なコンテンツのフィルタリング**: NGワードリスト、センシティブコンテンツ検出
 
 ### センチメント分析と適応的応答
 - メッセージの感情を分析

@@ -1,7 +1,8 @@
 .PHONY: help stream stream-stop dev-server dev-web dev-youtube test-youtube test-message stop stop-all \
         db-setup db-start db-stop db-restart db-status db-export db-sync-discord db-danger-clear-all \
         collect-discord collect-discord-stop collect-discord-restart \
-        test-query-expansion test-expanded-search test-reranking-search test-search
+        test-query-expansion test-expanded-search test-reranking-search test-search \
+        test-comment-filter test-comment-filter-interactive
 
 # デフォルトターゲット: ヘルプを表示
 help:
@@ -24,6 +25,8 @@ help:
 	@echo "  make test-expanded-search          - Test expanded search with Knowledge DB"
 	@echo "  make test-reranking-search         - Test expanded search with LLM reranking"
 	@echo "  make test-search QUERY='質問文'    - Test single expanded search query"
+	@echo "  make test-comment-filter           - Test YouTube comment filter (automated)"
+	@echo "  make test-comment-filter-interactive - Test comment filter (interactive mode)"
 	@echo ""
 	@echo "Knowledge DB:"
 	@echo "  make db-setup              - Initial setup (install deps + start DB + apply schema)"
@@ -155,6 +158,18 @@ test-search:
 	@echo "Note: Make sure Knowledge DB service is running (make db-start)"
 	@echo ""
 	@cd apps/stage-web && pnpm tsx -e "import { useExpandedSearch } from './src/composables/knowledge'; (async () => { const { searchWithExpansion } = useExpandedSearch(); const result = await searchWithExpansion('$(QUERY)'); console.log(JSON.stringify(result, null, 2)); })().catch(console.error);"
+
+# コメントフィルターのテスト（自動実行）
+test-comment-filter:
+	@echo "🧪 Testing YouTube Comment Filter..."
+	@echo ""
+	@pnpm -F @proj-airi/youtube-bot test-comment-filter
+
+# コメントフィルターのテスト（インタラクティブモード）
+test-comment-filter-interactive:
+	@echo "🧪 Testing YouTube Comment Filter (Interactive Mode)"
+	@echo ""
+	@pnpm -F @proj-airi/youtube-bot test-comment-filter:interactive
 
 # ========================================
 # Knowledge DB Commands
