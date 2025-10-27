@@ -77,6 +77,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - [2025-10-17: Idle Talk with Knowledge DB](./.claude-notes/sessions/2025-10-17-idle-talk.md) - アイドル状態でのランダム話題会話機能の実装
 - [2025-10-20: Topic Continuation Unification](./.claude-notes/sessions/2025-10-20-topic-continuation.md) - トピック継続ロジックの共通化とチャット継続機能の実装
 - [2025-10-21: YouTube Comment Processing Fix](./.claude-notes/sessions/2025-10-21-youtube-comment-fix.md) - YouTubeコメント処理の致命的バグ修正（WebSocket初期化、イベントリスナー、readyState）
+- [2025-10-27: Rule-based Comment Filter](./.claude-notes/sessions/2025-10-27-comment-filter.md) - YouTubeコメントのルールベースノイズフィルタリング機能の実装
 
 ## 将来の拡張計画
 
@@ -118,6 +119,20 @@ Claude Codeを使ってこのプロジェクトに貢献する場合：
 - [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 ## 実装済み機能
+
+### youtube-bot
+
+- ✅ **YouTube Live Chat統合** - YouTube Liveコメントの受信と処理
+- ✅ **ルールベースコメントフィルター** - ノイズコメントの自動除外
+  - 笑い表現フィルター（`www`, `草`, `笑笑笑`, `lolol`など）
+  - 拍手フィルター（`88888`など）
+  - 短すぎるコメント除外（デフォルト: 3文字未満）
+  - 記号のみのコメント除外（`!!!`, `？？？`など）
+  - ノイズワードフィルター（`ウケる`, `面白い`, `へー`など）
+  - ホワイトリスト機能（質問形式、15文字以上は通過）
+  - 環境変数での柔軟な制御（`COMMENT_FILTER_ENABLED`, `COMMENT_FILTER_MIN_LENGTH`など）
+  - フィルタリング理由の詳細ログ記録
+  - テストスイート（37ケース、100%合格）
 
 ### stage-web
 
