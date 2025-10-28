@@ -25,12 +25,15 @@
 > - Knowledge Database - PostgreSQL + pgvector based RAG system for character knowledge
 > - **Query Expansion (Phase 1)** - LLM-powered keyword expansion for improved Knowledge DB search accuracy
 > - YouTube Streaming Mode - Optimized UI for live broadcasting with configurable visibility controls
+> - **Custom VRM Model Support** - Use your own VRM avatars with environment variable configuration (perfect for OBS Browser Source)
 >
 > 📺 **[YouTube Bot Documentation](./services/youtube-bot/README.md)** - Complete setup guide and features
 >
 > 🧠 **[Knowledge DB Documentation](./services/knowledge-db/README.md)** - RAG system setup and Discord integration
 >
 > 🎥 **[Streaming Mode Documentation](./apps/stage-web/README.md#youtube-streaming-mode)** - UI configuration for YouTube Live
+>
+> 🎭 **[Custom VRM Model Setup](#custom-vrm-model-configuration)** - Use your own avatar models
 >
 > **🔓 Open Data & Transparency:**
 > - System prompts and Knowledge DB training data are publicly shared under **MIT License**
@@ -346,6 +349,76 @@ flowchart TD
   style Memory fill:#f9f9d4,stroke:#333,stroke-width:1px
   style Memory_PGVector fill:#f9f9d4,stroke:#333,stroke-width:1px
 ```
+
+## Custom VRM Model Configuration
+
+Use your own VRM avatar model with environment variable configuration. This is perfect for OBS Browser Source as it provides reproducible setup without requiring UI interaction.
+
+### Quick Start
+
+1. **Place your VRM file**
+
+   ```bash
+   cp your-model.vrm apps/stage-web/public/custom-models/vrm/
+   ```
+
+2. **Configure environment variables** in `apps/stage-web/.env`
+
+   ```bash
+   # Required: Your VRM filename
+   VITE_CUSTOM_VRM_FILENAME=your-model.vrm
+
+   # Optional: Display name
+   VITE_CUSTOM_VRM_NAME=My Custom Avatar
+
+   # Optional: Preview image (place in same directory)
+   VITE_CUSTOM_VRM_PREVIEW=your-model-preview.png
+   ```
+
+3. **Restart the application**
+
+   ```bash
+   pnpm dev
+   ```
+
+Your custom VRM model will be automatically loaded and selected as the default avatar.
+
+### Why Use Custom VRM Models?
+
+- **Perfect for OBS Browser Source** - No need to interact with UI every time you start streaming
+- **Reproducible Setup** - Configuration stored in `.env` file for consistent results
+- **Privacy Protection** - Your custom models are automatically excluded from git (see `.gitignore`)
+- **Easy to Manage** - All custom models in one dedicated directory
+
+### Directory Structure
+
+```
+apps/stage-web/public/custom-models/
+├── README.md              # Setup instructions
+└── vrm/                   # VRM models directory
+    ├── .gitkeep          # Keeps directory in git
+    └── your-model.vrm    # Your custom VRM file (gitignored)
+```
+
+### Environment Variables
+
+| Variable | Required | Description | Example |
+|----------|----------|-------------|---------|
+| `VITE_CUSTOM_VRM_FILENAME` | Yes | Filename of your VRM model | `my-avatar.vrm` |
+| `VITE_CUSTOM_VRM_NAME` | No | Display name in UI | `My Custom Avatar` |
+| `VITE_CUSTOM_VRM_PREVIEW` | No | Preview image filename | `my-avatar-preview.png` |
+
+### Priority Order
+
+When multiple avatar configurations are set, the priority is:
+
+1. **Custom VRM** (via `VITE_CUSTOM_VRM_FILENAME`) - Highest priority
+2. **Preset Model** (via `VITE_AVATAR_MODEL`) - Medium priority
+3. **Default** (`preset-vrm-2`) - Fallback
+
+### For More Details
+
+See the comprehensive guide in [apps/stage-web/public/custom-models/README.md](apps/stage-web/public/custom-models/README.md)
 
 ## Similar Projects
 
