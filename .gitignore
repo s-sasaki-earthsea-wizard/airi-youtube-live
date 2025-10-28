@@ -78,6 +78,15 @@ components.d.ts
 **/public/assets/live2d/models/*
 **/public/assets/vrm/models/*
 
+# Custom VRM models (prevent redistribution of personal models)
+**/public/custom-models/vrm/*.vrm
+**/public/custom-models/vrm/*.png
+**/public/custom-models/vrm/*.jpg
+**/public/custom-models/vrm/*.jpeg
+# But keep directory structure
+!**/public/custom-models/vrm/.gitkeep
+!**/public/custom-models/.gitkeep
+
 # Serving fonts locally
 **/public/assets/fonts/
 

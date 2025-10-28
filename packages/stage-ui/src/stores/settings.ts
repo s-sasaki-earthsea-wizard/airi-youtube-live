@@ -7,6 +7,7 @@ import { converter } from 'culori'
 import { defineStore } from 'pinia'
 import { onMounted, ref, watch } from 'vue'
 
+import { getCustomVRMConfig } from '../utils/custom-models'
 import { useAudioDevice } from './audio'
 import { DisplayModelFormat, useDisplayModelsStore } from './display-models'
 
@@ -39,10 +40,21 @@ export const useSettings = defineStore('settings', () => {
 
   const language = useLocalStorage('settings/language', '')
 
+  // Determine default avatar model based on environment variables
+  // Priority: custom VRM > VITE_AVATAR_MODEL > default preset
+  function getDefaultAvatarModel(): string {
+    const env = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env as Record<string, any> : undefined
+    const customVRM = getCustomVRMConfig(env)
+    if (customVRM) {
+      return 'custom-vrm-env'
+    }
+    return (env?.VITE_AVATAR_MODEL as string) || 'preset-vrm-2'
+  }
+
   // Avatar model selection with environment variable support
   const stageModelSelected = useLocalStorage<string | undefined>(
     'settings/stage/model',
-    import.meta.env.VITE_AVATAR_MODEL || 'preset-vrm-2',
+    getDefaultAvatarModel(),
   )
   const stageModelSelectedDisplayModel = ref<DisplayModel | undefined>()
   const stageModelSelectedUrl = ref<string>()

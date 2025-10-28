@@ -90,6 +90,7 @@ const props = withDefaults(defineProps<{
   skyBoxIntensity: number
   nprIrrSH?: SphericalHarmonics3 | null
 
+  scale: number
   modelOffset: Vec3
   modelRotationY: number
   lookAtTarget: Vec3
@@ -100,6 +101,7 @@ const props = withDefaults(defineProps<{
   camera: PerspectiveCamera
 }>(), {
   paused: false,
+  scale: 1,
 })
 /*
   * Emits:
@@ -134,6 +136,7 @@ const {
   skyBoxIntensity,
   nprIrrSH,
 
+  scale,
   modelOffset,
   modelRotationY,
   lookAtTarget,
@@ -295,6 +298,8 @@ async function loadModel() {
       */
       vrm.value = _vrm
       vrmGroup.value = _vrmGroup
+      // Apply scale to the model
+      vrmGroup.value.scale.setScalar(scale.value)
       // If it's first load
       if (isFirstLoad) {
         emit('cameraPosition', {
@@ -491,6 +496,12 @@ onMounted(async () => {
   watch(modelRotationY, (newRotationY) => {
     if (vrmGroup.value) {
       vrmGroup.value.rotation.y = MathUtils.degToRad(newRotationY)
+    }
+  }, { immediate: true })
+  // update model scale
+  watch(scale, (newScale) => {
+    if (vrmGroup.value) {
+      vrmGroup.value.scale.setScalar(newScale)
     }
   }, { immediate: true })
   // update NPR sky box

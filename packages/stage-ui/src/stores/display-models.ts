@@ -10,6 +10,8 @@ import { defineStore } from 'pinia'
 import { Live2DFactory, Live2DModel } from 'pixi-live2d-display/cubism4'
 import { ref } from 'vue'
 
+import { getCustomVRMModel } from '../utils/custom-models'
+
 import '../utils/live2d-zip-loader'
 
 export enum DisplayModelFormat {
@@ -45,12 +47,28 @@ export interface DisplayModelURL {
   importedAt: number
 }
 
-const displayModelsPresets: DisplayModel[] = [
-  { id: 'preset-live2d-1', format: DisplayModelFormat.Live2dZip, type: 'url', url: '/assets/live2d/models/hiyori_pro_zh.zip', name: 'Hiyori (Pro)', previewImage: '/assets/live2d/models/hiyori/preview.png', importedAt: 1733113886840 },
-  { id: 'preset-live2d-2', format: DisplayModelFormat.Live2dZip, type: 'url', url: '/assets/live2d/models/hiyori_free_zh.zip', name: 'Hiyori (Free)', previewImage: '/assets/live2d/models/hiyori/preview.png', importedAt: 1733113886840 },
-  { id: 'preset-vrm-1', format: DisplayModelFormat.VRM, type: 'url', url: '/assets/vrm/models/AvatarSample-A/AvatarSample_A.vrm', name: 'AvatarSample_A', previewImage: '/assets/vrm/models/AvatarSample-A/preview.png', importedAt: 1733113886840 },
-  { id: 'preset-vrm-2', format: DisplayModelFormat.VRM, type: 'url', url: '/assets/vrm/models/AvatarSample-B/AvatarSample_B.vrm', name: 'AvatarSample_B', previewImage: '/assets/vrm/models/AvatarSample-B/preview.png', importedAt: 1733113886840 },
-]
+// Build preset models list with custom VRM support
+function buildDisplayModelsPresets(): DisplayModel[] {
+  const presets: DisplayModel[] = [
+    { id: 'preset-live2d-1', format: DisplayModelFormat.Live2dZip, type: 'url', url: '/assets/live2d/models/hiyori_pro_zh.zip', name: 'Hiyori (Pro)', previewImage: '/assets/live2d/models/hiyori/preview.png', importedAt: 1733113886840 },
+    { id: 'preset-live2d-2', format: DisplayModelFormat.Live2dZip, type: 'url', url: '/assets/live2d/models/hiyori_free_zh.zip', name: 'Hiyori (Free)', previewImage: '/assets/live2d/models/hiyori/preview.png', importedAt: 1733113886840 },
+    { id: 'preset-vrm-1', format: DisplayModelFormat.VRM, type: 'url', url: '/assets/vrm/models/AvatarSample-A/AvatarSample_A.vrm', name: 'AvatarSample_A', previewImage: '/assets/vrm/models/AvatarSample-A/preview.png', importedAt: 1733113886840 },
+    { id: 'preset-vrm-2', format: DisplayModelFormat.VRM, type: 'url', url: '/assets/vrm/models/AvatarSample-B/AvatarSample_B.vrm', name: 'AvatarSample_B', previewImage: '/assets/vrm/models/AvatarSample-B/preview.png', importedAt: 1733113886840 },
+  ]
+
+  // Add custom VRM model from environment variables if configured
+  // Pass import.meta.env explicitly since this package may not have direct access
+  const env = typeof import.meta !== 'undefined' && import.meta.env ? import.meta.env as Record<string, any> : undefined
+
+  const customVRM = getCustomVRMModel(env)
+  if (customVRM) {
+    presets.unshift(customVRM)
+  }
+
+  return presets
+}
+
+const displayModelsPresets: DisplayModel[] = buildDisplayModelsPresets()
 
 export const useDisplayModelsStore = defineStore('display-models', () => {
   const displayModels = ref<DisplayModel[]>([])
