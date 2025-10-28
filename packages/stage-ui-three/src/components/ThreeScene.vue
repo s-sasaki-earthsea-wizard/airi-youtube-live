@@ -56,6 +56,7 @@ const sceneContainerRef = ref<HTMLDivElement>()
 const { width, height } = useElementBounding(sceneContainerRef)
 const modelStore = useModelStore()
 const {
+  scale,
   lastModelSrc,
 
   modelSize,
@@ -341,6 +342,7 @@ defineExpose({
         :env-select="envSelect"
         :sky-box-intensity="skyBoxIntensity"
         :npr-irr-s-h="irrSHTex"
+        :scale="scale"
         :model-offset="modelOffset"
         :model-rotation-y="modelRotationY"
         :look-at-target="lookAtTarget"
