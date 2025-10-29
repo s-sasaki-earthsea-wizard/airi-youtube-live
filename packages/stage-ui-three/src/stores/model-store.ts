@@ -86,7 +86,7 @@ export const useModelStore = defineStore('modelStore', () => {
   const modelOffset = useLocalStorage('settings/stage-ui-three/modelOffset', {
     x: Number(import.meta.env.VITE_AVATAR_POSITION_X) || 0,
     y: Number(import.meta.env.VITE_AVATAR_POSITION_Y) || 0,
-    z: 0,
+    z: Number(import.meta.env.VITE_AVATAR_POSITION_Z) || 0,
   })
   const modelRotationY = useLocalStorage('settings/stage-ui-three/modelRotationY', 0)
 
