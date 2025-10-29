@@ -2,7 +2,8 @@
  * Expanded Search Composable
  *
  * Combines query expansion with Knowledge DB vector search.
- * Performs parallel searches using expanded keywords and merges results.
+ * Performs parallel searches using expanded keywords, merges results,
+ * and uses LLM-based topic selection to filter for truly relevant content.
  */
 
 import type { KnowledgeResponse } from './useKnowledgeDB'
@@ -14,6 +15,7 @@ import { ref } from 'vue'
 import { mergeKnowledgeResults } from './knowledgeResultMerger'
 import { useKnowledgeDB } from './useKnowledgeDB'
 import { useQueryExpansion } from './useQueryExpansion'
+import { useTopicSelection } from './useTopicSelection'
 
 export interface ExpandedSearchOptions {
   limit?: number
@@ -68,6 +70,7 @@ export function useExpandedSearch() {
   const config = getExpandedSearchConfig()
   const { expandQuery } = useQueryExpansion()
   const { queryKnowledge } = useKnowledgeDB()
+  const { selectRelevantTopics } = useTopicSelection()
   const isLoading = ref(false)
   const error = ref<Error | null>(null)
 
@@ -163,8 +166,35 @@ export function useExpandedSearch() {
         + `(from ${searchResults.filter(r => r !== null).length} searches)`,
       )
 
+      // Step 5: Use LLM to select only truly relevant topics
+      console.info('[useExpandedSearch] Applying LLM-based topic selection...')
+      const selectionResult = await selectRelevantTopics(
+        query,
+        mergedResponse.results,
+      )
+
+      if (selectionResult.selectedCount === 0) {
+        console.info('[useExpandedSearch] No relevant topics selected by LLM')
+        return {
+          response: null,
+          expandedKeywords,
+          searchStrategy: 'merged',
+        }
+      }
+
+      console.info(
+        `[useExpandedSearch] Selected ${selectionResult.selectedCount}/${mergedResponse.total} relevant topics`,
+      )
+
+      // Return filtered response with only selected topics
+      const filteredResponse: KnowledgeResponse = {
+        query: mergedResponse.query,
+        results: selectionResult.selectedResults,
+        total: selectionResult.selectedCount,
+      }
+
       return {
-        response: mergedResponse,
+        response: filteredResponse,
         expandedKeywords,
         searchStrategy: 'merged',
       }

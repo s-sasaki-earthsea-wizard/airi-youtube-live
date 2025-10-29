@@ -31,4 +31,9 @@ export type {
   QueryExpansionConfig,
 } from './useQueryExpansion'
 
-export { useReranking } from './useReranking'
+export { useTopicSelection } from './useTopicSelection'
+
+export type {
+  SelectionOptions,
+  SelectionResult,
+} from './useTopicSelection'
