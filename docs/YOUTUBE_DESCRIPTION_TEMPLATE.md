@@ -63,56 +63,16 @@ Docs: https://airi.moeru.ai
 
 ## Detailed Sections
 
-### 1. Basic Description (必須)
+### Tier 1: 必須情報（すべての視聴者向け）
 
-**日本語:**
+### 1. はじめに
+
 ```
 このライブ配信はAI VTuberによる自動配信です。
 AIがリアルタイムでコメントに応答し、会話を行います。
 ```
 
-**English:**
-```
-This is an AI VTuber live stream.
-The AI responds to comments in real-time.
-```
-
-### 2. Technology Stack (必須)
-
-```
-【使用技術 / Technology】
-- LLM (Large Language Model): チャット応答生成
-- TTS (Text-to-Speech): 音声合成（ElevenLabs等）
-- VRM Avatar: 3Dキャラクターモデル
-- Knowledge Database: RAG（Retrieval-Augmented Generation）による知識ベース
-```
-
-### 3. Project Credits (必須 - REQUIRED)
-
-```
-【Based on / フォーク元】
-Project AIRI - YouTube Live Edition
-Original Project: https://github.com/moeru-ai/airi
-This Fork: https://github.com/[your-username]/airi-youtube-live
-
-Inspired by Neuro-sama: https://www.youtube.com/@Neurosama
-```
-
-**Note:** Replace `[your-username]` with your actual GitHub username if you have a fork.
-
-### 4. License Notice (必須 - REQUIRED)
-
-```
-【License / ライセンス】
-MIT License
-Copyright (c) 2024-PRESENT Neko Ayaka
-Full License: https://github.com/moeru-ai/airi/blob/main/LICENSE
-
-このソフトウェアはMITライセンスの下で提供されています。
-システムプロンプトとナレッジDBのトレーニングデータは公開されています。
-```
-
-### 5. AI Response Disclaimer (必須 - REQUIRED)
+### 2. AI Response Disclaimer (必須 - REQUIRED)
 
 ```
 【注意事項 / Disclaimer】
@@ -121,15 +81,31 @@ Full License: https://github.com/moeru-ai/airi/blob/main/LICENSE
 - 誤った情報を提供する可能性があります
 - すべてのコメントに応答できるわけではありません
 - フィルタリング機能により一部コメントは処理されません
-
-⚠️ This is an automated AI response system:
-- May occasionally produce inappropriate responses
-- Information provided may not always be accurate
-- Not all comments will be answered
-- Some comments are filtered by noise detection
 ```
 
-### 6. Cryptocurrency Scam Warning (推奨 - RECOMMENDED)
+### 3. Project Credits & License (必須 - REQUIRED)
+
+```
+【Based on / フォーク元】
+Project AIRI - YouTube Live Edition
+
+MIT License
+
+Based on Project AIRI:
+  Copyright (c) 2024-PRESENT Neko Ayaka
+  Original: https://github.com/moeru-ai/airi
+
+Modified & Extended by:
+  Copyright (c) 2024-PRESENT Syota Sasaki
+  This Fork: https://github.com/s-sasaki-earthsea-wizard/airi-youtube-live
+
+このソフトウェアはMITライセンスの下で提供されています。
+システムプロンプトとナレッジDBのトレーニングデータは公開されています。
+```
+
+### Tier 2: 重要な警告・補足（一般視聴者向け）
+
+### 4. Cryptocurrency Scam Warning (推奨 - RECOMMENDED)
 
 ```
 ⚠️【重要】このプロジェクトに関連する公式の暗号通貨やトークンは存在しません。
@@ -139,19 +115,23 @@ Full License: https://github.com/moeru-ai/airi/blob/main/LICENSE
 or token associated with this project. Beware of scams.
 ```
 
-### 7. Open Data & Transparency (オプション)
+### 5. アバターについて
+
+- TBA (BoothのURLなど記載予定、どれもクレジットを明記することで配信利用OKであることは確認済み)
+
+### Tier 3: 技術的詳細（興味がある人向け）
+
+### 6. 技術スタック
 
 ```
-【オープンデータ・透明性 / Open Data & Transparency】
-✅ システムプロンプトは公開されています
-✅ Knowledge DBのトレーニングデータはMITライセンスで公開
-✅ 個人識別情報は除外されています
-✅ プロンプトエンジニアリング研究や実験にご自由にお使いください
-
-Current data source: Developer's own posts only (Discord)
+【使用技術 / Technology】
+- LLM (Large Language Model): チャット応答生成
+- TTS (Text-to-Speech): 音声合成（ElevenLabs等）
+- VRM Avatar: 3Dキャラクターモデル
+- Knowledge Database: RAG（Retrieval-Augmented Generation）による知識ベース
 ```
 
-### 8. Features Highlight (オプション)
+### 7. Features Highlight (オプション)
 
 ```
 【Features / 機能】
@@ -163,28 +143,24 @@ Current data source: Developer's own posts only (Discord)
 ✅ Idle Talk - アイドル時のランダム会話機能
 ```
 
-### 9. Community Links (推奨)
+### 8. Open Data & Transparency (オプション)
 
 ```
-【Community / コミュニティ】
-Discord: https://discord.gg/TgQ3Cu2F7A
-Twitter/X: https://x.com/proj_airi
-Telegram: https://t.me/+7M_ZKO3zUHFlOThh
-Documentation: https://airi.moeru.ai
+【オープンデータ・透明性 / Open Data & Transparency】
+✅ システムプロンプトは公開されています
+✅ Knowledge DBのトレーニングデータはMITライセンスで公開
+✅ 個人識別情報は除外されています
+✅ プロンプトエンジニアリング研究や実験にご自由にお使いください
+
+📄 View System Prompt:
+   https://github.com/s-sasaki-earthsea-wizard/airi-youtube-live/blob/main/apps/stage-web/public/prompts/system-prompt.md
+
+📊 Knowledge DB Export: Run `make db-export` to generate
+
+Current data source: Developer's own posts only (Discord)
 ```
 
-### 10. Related Projects (オプション)
-
-```
-【Related Projects / 関連プロジェクト】
-- xsAI: LLM統合ライブラリ https://github.com/moeru-ai/xsai
-- unspeech: 音声認識・合成プロキシサーバー https://github.com/moeru-ai/unspeech
-- Awesome AI VTuber: キュレーションリスト https://github.com/proj-airi/awesome-ai-vtuber
-```
-
-## Hashtags
-
-Recommended hashtags for better discoverability:
+## Hashtags (for SEO)
 
 ```
 #AIVTuber #ProjectAIRI #LLM #TTS #VRM #VirtualYouTuber
