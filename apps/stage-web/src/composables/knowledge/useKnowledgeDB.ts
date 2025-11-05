@@ -56,6 +56,7 @@ export function useKnowledgeDB() {
   const isLoading = ref(false)
   const error = ref<Error | null>(null)
   const instructionText = ref<string | null>(null)
+  const noKnowledgeInstructionText = ref<string | null>(null)
 
   /**
    * Load instruction text from file
@@ -81,6 +82,38 @@ export function useKnowledgeDB() {
       // Fallback to simple default instruction
       const defaultInstruction = '以下はあなたの過去の発言から関連する内容です。これらを参考にして会話してください。'
       instructionText.value = defaultInstruction
+      return defaultInstruction
+    }
+  }
+
+  /**
+   * Load no-knowledge instruction text from file
+   * Loads once and caches the result
+   */
+  async function loadNoKnowledgeInstructionText(): Promise<string> {
+    // Return cached version if already loaded
+    if (noKnowledgeInstructionText.value !== null) {
+      return noKnowledgeInstructionText.value
+    }
+
+    try {
+      const response = await fetch('/prompts/no-knowledge-instruction.md')
+      if (!response.ok) {
+        throw new Error(`Failed to load no-knowledge instruction: ${response.status}`)
+      }
+      const text = await response.text()
+      noKnowledgeInstructionText.value = text
+      return text
+    }
+    catch (err) {
+      console.warn('[useKnowledgeDB] Failed to load no-knowledge instruction file, using default', err)
+      // Fallback to simple default instruction
+      const defaultInstruction = `## 知識の限界について
+
+このトピックについて、あなたは詳しい知識や経験を持っていません。
+「個人的にはあまり詳しくないけど」「よく知らないんだけど、一般論で言うと」のような前置きをして、
+正直に知識の限界を示してください。知ったかぶりをせず、一般的な見解や推測程度に留めて回答してください。`
+      noKnowledgeInstructionText.value = defaultInstruction
       return defaultInstruction
     }
   }
@@ -230,6 +263,18 @@ export function useKnowledgeDB() {
     return `\n\n${instruction}\n\n${formattedResults}\n`
   }
 
+  /**
+   * Format no-knowledge instruction for injection into system prompt
+   * Used when no relevant knowledge is found in the database
+   *
+   * @returns Formatted text for system prompt indicating lack of knowledge
+   */
+  async function formatNoKnowledgeForPrompt(): Promise<string> {
+    const instruction = await loadNoKnowledgeInstructionText()
+    console.info('[useKnowledgeDB] Loaded no-knowledge instruction:', instruction.substring(0, 100))
+    return `\n\n${instruction}\n`
+  }
+
   return {
     config,
     isLoading,
@@ -237,5 +282,6 @@ export function useKnowledgeDB() {
     queryKnowledge,
     getRandomTopic,
     formatKnowledgeForPrompt,
+    formatNoKnowledgeForPrompt,
   }
 }

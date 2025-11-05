@@ -76,6 +76,7 @@ export function useTopicContinuation(config: TopicContinuationConfig) {
   /**
    * Build continuation prompt based on last response
    * Includes related knowledge from Knowledge DB
+   * If no related knowledge is found, instructs to speak from a general perspective
    */
   async function buildContinuationPrompt(): Promise<string> {
     if (!lastResponse.value) {
@@ -88,6 +89,7 @@ export function useTopicContinuation(config: TopicContinuationConfig) {
 
     // Search for related knowledge to enrich the continuation
     let relatedKnowledge = ''
+    let hasKnowledge = false
     try {
       const relatedResults = await knowledgeDB.queryKnowledge(lastResponse.value, {
         limit: 3,
@@ -95,12 +97,16 @@ export function useTopicContinuation(config: TopicContinuationConfig) {
       })
 
       if (relatedResults && relatedResults.results.length > 0) {
+        hasKnowledge = true
         console.info(`[TopicContinuation] Found ${relatedResults.results.length} related knowledge items`)
         const instruction = await loadInstructionText()
         relatedKnowledge = `\n${instruction}\n\n${relatedResults.results
           .map(k => `- ${k.content.substring(0, 100)}${k.content.length > 100 ? '...' : ''}`)
           .join('\n')
         }\n`
+      }
+      else {
+        console.info('[TopicContinuation] No related knowledge found, will use general perspective')
       }
     }
     catch (error) {
@@ -110,12 +116,25 @@ export function useTopicContinuation(config: TopicContinuationConfig) {
     // Increment continuation counter
     contextContinuationCount.value++
 
-    return `前回あなたはこう話しました：
+    // Build prompt based on whether we have knowledge or not
+    if (hasKnowledge) {
+      return `前回あなたはこう話しました：
 「${lastResponse.value}」
 ${relatedKnowledge}
 この話題について、さらに深掘りして200文字程度で話してください。
 自然な会話の流れで、関連する思い出や考えを加えてください。
 「さっきの話の続きだけど」のような前置きは不要です。直接内容に入ってください。`
+    }
+    else {
+      return `前回あなたはこう話しました：
+「${lastResponse.value}」
+
+あなたはこの話題について詳しい知識や経験を持っていません。
+「個人的にはあまり詳しくないけど」「よく知らないんだけど、一般論で言うと」のような前置きをして、
+一般的な見解や推測程度に留めて200文字程度で話してください。
+知ったかぶりをせず、正直に知識の限界を示すことが大切です。
+「さっきの話の続きだけど」のような前置きは不要です。直接内容に入ってください。`
+    }
   }
 
   /**

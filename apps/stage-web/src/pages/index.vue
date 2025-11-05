@@ -90,12 +90,19 @@ onMounted(() => {
           }
         }
         else {
-          // Reset to base prompt if no relevant knowledge found
+          // No relevant knowledge found - add instruction to express lack of knowledge
+          const noKnowledgeContext = await knowledgeDB!.formatNoKnowledgeForPrompt()
+
           const defaultCard = airiCardStore.getCard('default')
           if (defaultCard) {
-            defaultCard.description = baseSystemPrompt
+            // IMPORTANT: Prepend to beginning of prompt for higher priority
+            const newPrompt = `${noKnowledgeContext}\n\n---\n\n${baseSystemPrompt}`
+            defaultCard.description = newPrompt
+            console.info('[index.vue] No relevant knowledge found, added no-knowledge instruction to prompt (prepended)')
+            console.info('[index.vue] No-knowledge context:', noKnowledgeContext.substring(0, 200))
+            console.info('[index.vue] Full system prompt length:', newPrompt.length)
+            console.info('[index.vue] System prompt starts with:', newPrompt.substring(0, 400))
           }
-          console.info('[index.vue] No relevant knowledge found, using base prompt')
         }
       }
       catch (error) {

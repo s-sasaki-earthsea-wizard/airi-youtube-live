@@ -252,10 +252,14 @@ export const useChatStore = defineStore('chat', () => {
       const headers = (options.providerConfig?.headers || {}) as Record<string, string>
 
       // Log the actual messages being sent to LLM for debugging
+      const systemPromptContent = newMessages[0]?.role === 'system' && typeof newMessages[0].content === 'string'
+        ? newMessages[0].content as string
+        : null
+
       console.info('[ChatStore] Sending to LLM:', {
         model: options.model,
         messageCount: newMessages.length,
-        systemPrompt: newMessages[0]?.role === 'system' ? `${(newMessages[0].content as string).substring(0, 200)}...` : 'none',
+        systemPrompt: systemPromptContent ? `${systemPromptContent.substring(0, 200)}...` : 'none',
         messages: newMessages.map((msg, idx) => ({
           index: idx,
           role: msg.role,
@@ -263,6 +267,13 @@ export const useChatStore = defineStore('chat', () => {
           contentLength: typeof msg.content === 'string' ? msg.content.length : 'N/A',
         })),
       })
+
+      // Additional debug: log system prompt beginning and ending
+      if (systemPromptContent) {
+        console.info('[ChatStore] System prompt length:', systemPromptContent.length)
+        console.info('[ChatStore] System prompt starts with:', systemPromptContent.substring(0, 400))
+        console.info('[ChatStore] System prompt ends with:', systemPromptContent.substring(Math.max(0, systemPromptContent.length - 400)))
+      }
 
       await stream(options.model, options.chatProvider, newMessages as Message[], {
         headers,

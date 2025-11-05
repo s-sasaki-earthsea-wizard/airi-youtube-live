@@ -2,7 +2,7 @@
         db-setup db-start db-stop db-restart db-status db-export db-sync-discord db-danger-clear-all \
         collect-discord collect-discord-stop collect-discord-restart \
         test-query-expansion test-expanded-search test-reranking-search test-topic-selection test-search \
-        test-comment-filter test-comment-filter-interactive
+        test-comment-filter test-comment-filter-interactive test-no-knowledge
 
 # デフォルトターゲット: ヘルプを表示
 help:
@@ -28,6 +28,7 @@ help:
 	@echo "  make test-search QUERY='質問文'    - Test single expanded search query"
 	@echo "  make test-comment-filter           - Test YouTube comment filter (automated)"
 	@echo "  make test-comment-filter-interactive - Test comment filter (interactive mode)"
+	@echo "  make test-no-knowledge             - Test topic continuation with no DB knowledge"
 	@echo ""
 	@echo "Knowledge DB:"
 	@echo "  make db-setup              - Initial setup (install deps + start DB + apply schema)"
@@ -184,6 +185,16 @@ test-comment-filter-interactive:
 	@echo "🧪 Testing YouTube Comment Filter (Interactive Mode)"
 	@echo ""
 	@pnpm -F @proj-airi/youtube-bot test-comment-filter:interactive
+
+# トピック継続（知識なし）のテスト
+test-no-knowledge:
+	@echo "🧪 Testing Topic Continuation with No Knowledge..."
+	@echo ""
+	@echo "Note: Make sure Knowledge DB service is running (make db-start)"
+	@echo ""
+	@echo "Pipeline: Topic Continuation → Knowledge Query (0 results) → LLM Response"
+	@echo ""
+	@cd apps/stage-web && pnpm tsx src/test-no-knowledge-continuation.ts
 
 # ========================================
 # Knowledge DB Commands
