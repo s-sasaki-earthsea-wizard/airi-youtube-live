@@ -78,6 +78,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - [2025-10-20: Topic Continuation Unification](./.claude-notes/sessions/2025-10-20-topic-continuation.md) - トピック継続ロジックの共通化とチャット継続機能の実装
 - [2025-10-21: YouTube Comment Processing Fix](./.claude-notes/sessions/2025-10-21-youtube-comment-fix.md) - YouTubeコメント処理の致命的バグ修正（WebSocket初期化、イベントリスナー、readyState）
 - [2025-10-27: Rule-based Comment Filter](./.claude-notes/sessions/2025-10-27-comment-filter.md) - YouTubeコメントのルールベースノイズフィルタリング機能の実装
+- [2025-11-06: Dynamic Topic Association](./.claude-notes/sessions/2025-11-06-dynamic-topic-association.md) - トピック継続時の動的な話題連想機能の実装（Query Expansion + 使用済み知識除外）
 
 ## 将来の拡張計画
 
@@ -137,13 +138,28 @@ Claude Codeを使ってこのプロジェクトに貢献する場合：
 ### stage-web
 
 - ✅ **YouTube配信向けUIカスタマイズ** - ヘッダー、チャット応答、入力欄の表示切替
-- ✅ **Knowledge DB統合** - RAGによる文脈に応じた知識の提供
+- ✅ **Knowledge DB統合（RAG）** - 文脈に応じた知識の提供とキャラクター一貫性の維持
+  - **知識ヒット時**：関連知識を参照して詳しく回答
+  - **知識なし時**：「詳しくない」と正直に表現（キャラクター崩壊を防ぐ）
+    - 必須フレーズ：「ごめん、そのジャンルは正直あまり詳しくないんだけど...」など
+    - 禁止事項：個人的経験を語る（「僕も〜」）、具体的固有名詞の使用
+    - システムプロンプト**冒頭**に配置（LLMの優先度を高める）
+    - プロンプトファイル: `/prompts/no-knowledge-instruction.md`
+  - 適用範囲：直接チャット・トピック継続の両方
+  - テストコマンド: `make test-no-knowledge`
+  - **動的トピック連想** (2025-11-06追加)
+    - 二段階クエリ：トピック継続 + システムプロンプトで異なる視点から検索
+    - Query Expansion: LLMベースのキーワード展開で関連話題を発見
+    - 使用済み知識除外: 同じ知識の繰り返しを防止
+    - 環境変数: `VITE_TOPIC_CONTINUATION_LIMIT`, `VITE_TOPIC_CONTINUATION_THRESHOLD`, `VITE_TOPIC_CONTINUATION_MAX_KEYWORDS`
 - ✅ **トピック継続機能** - ユーザーチャットとアイドルトークの統一的な会話継続
   - `useTopicContinuation` composableによる共通ロジック
   - チャット入力からの自動継続（デフォルト: 3回）
   - Knowledge DBからの関連知識統合
+  - **知識なし時の適切な応答生成** - 誠実性を保つ
   - 継続プロンプトのUI非表示（`_hideInUI`フラグ）
   - 環境変数での個別制御（`VITE_CHAT_CONTINUATION_ENABLED`, `VITE_CHAT_MAX_CONTINUATION`）
+  - テストスクリプト: `apps/stage-web/src/test-no-knowledge-continuation.ts`
 - ✅ **Idle Talk機能** - アイドル状態でのランダム話題会話
   - タイマーベースのアイドル検知
   - Knowledge DBからのランダム話題取得
@@ -160,5 +176,5 @@ Claude Codeを使ってこのプロジェクトに貢献する場合：
 
 ---
 
-**最終更新**: 2025-10-20
+**最終更新**: 2025-11-06
 **Claude Code バージョン**: Sonnet 4.5 (claude-sonnet-4-5-20250929)

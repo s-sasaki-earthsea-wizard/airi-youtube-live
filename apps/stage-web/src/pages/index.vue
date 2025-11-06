@@ -14,8 +14,8 @@ import MobileHeader from '../components/Layouts/MobileHeader.vue'
 import MobileInteractiveArea from '../components/Layouts/MobileInteractiveArea.vue'
 import AnimatedWave from '../components/Widgets/AnimatedWave.vue'
 
-import { isCurrentlyIdleTalking } from '../composables/idle-talk'
-import { useExpandedSearch, useKnowledgeDBIntegration, useReranking } from '../composables/knowledge'
+import { getTopicContinuationInstance, isCurrentlyIdleTalking } from '../composables/idle-talk'
+import { useExpandedSearch, useKnowledgeDBIntegration } from '../composables/knowledge'
 import { useStreamingMode } from '../composables/streaming-mode'
 import { themeColorFromPropertyOf, useThemeColor } from '../composables/theme-color'
 
@@ -39,7 +39,6 @@ const chatStore = useChatStore()
 const airiCardStore = useAiriCardStore()
 const knowledgeDBIntegration = useKnowledgeDBIntegration()
 const { searchWithExpansion } = useExpandedSearch()
-const { rerankResults } = useReranking()
 
 onMounted(() => {
   updateThemeColor()
@@ -52,63 +51,68 @@ onMounted(() => {
 
     chatStore.onBeforeMessageComposed(async (userMessage: string) => {
       console.info('[index.vue] Knowledge hook triggered for message:', userMessage)
-
-      // Skip Knowledge DB query during idle talk
       if (isCurrentlyIdleTalking.value) {
-        console.info('[index.vue] Skipping Knowledge DB query (idle talk in progress)')
-        // Reset to base prompt to avoid contamination from previous context
-        const { baseSystemPrompt } = integrationState
-        const defaultCard = airiCardStore.getCard('default')
-        if (defaultCard) {
-          defaultCard.description = baseSystemPrompt
-          console.info('[index.vue] Reset to base system prompt for idle talk')
-        }
-        return
+        console.info('[index.vue] Processing Knowledge DB query during topic continuation')
       }
 
       try {
         const { baseSystemPrompt, knowledgeDB } = integrationState
 
-        // Query knowledge database with expanded search + reranking
-        const searchResult = await searchWithExpansion(userMessage)
+        // Get used knowledge IDs from topic continuation to avoid repetition
+        const excludeIds: string[] = []
+        const continuationInstance = getTopicContinuationInstance()
+        if (continuationInstance) {
+          const usedIds = continuationInstance.getUsedKnowledgeIds()
+          excludeIds.push(...usedIds)
+          if (usedIds.length > 0) {
+            console.info(`[index.vue] Excluding ${usedIds.length} knowledge IDs used in topic continuation`)
+          }
+        }
+
+        // Query knowledge database with expanded search + LLM-based topic selection
+        // This works for both direct user input and topic continuation prompts
+        // For topic continuation, the userMessage contains both the previous response
+        // and related knowledge, which will be further expanded and queried
+        const searchResult = await searchWithExpansion(userMessage, {
+          excludeIds,
+        })
 
         if (searchResult.response && searchResult.response.results.length > 0) {
-          // Apply LLM reranking to select the most relevant results
-          const rerankedResults = await rerankResults(
-            userMessage,
-            searchResult.response.results,
-            {
-              topK: Number.parseInt(import.meta.env.VITE_RERANKING_TOP_K || '10', 10),
-              includeReasoning: false,
-            },
-          )
+          const selectedResults = searchResult.response.results
 
           console.info(
-            `[index.vue] Reranked ${rerankedResults.length} results from ${searchResult.response.total} candidates`,
+            `[index.vue] Selected ${selectedResults.length} relevant topics`,
             searchResult.expandedKeywords ? `(keywords: ${searchResult.expandedKeywords.join(', ')})` : '',
           )
 
           // Format knowledge and inject into system prompt
-          const knowledgeContext = await knowledgeDB!.formatKnowledgeForPrompt(rerankedResults)
+          const knowledgeContext = await knowledgeDB!.formatKnowledgeForPrompt(selectedResults)
 
           // Update the system prompt with knowledge context
           const defaultCard = airiCardStore.getCard('default')
           if (defaultCard) {
             defaultCard.description = baseSystemPrompt + knowledgeContext
-            console.info(`[index.vue] Injected ${rerankedResults.length} reranked knowledge results into system prompt`)
+            console.info(`[index.vue] Injected ${selectedResults.length} selected knowledge results into system prompt`)
           }
         }
         else {
-          // Reset to base prompt if no relevant knowledge found
+          // No relevant knowledge found - add instruction to express lack of knowledge
+          const noKnowledgeContext = await knowledgeDB!.formatNoKnowledgeForPrompt()
+
           const defaultCard = airiCardStore.getCard('default')
           if (defaultCard) {
-            defaultCard.description = baseSystemPrompt
+            // IMPORTANT: Prepend to beginning of prompt for higher priority
+            const newPrompt = `${noKnowledgeContext}\n\n---\n\n${baseSystemPrompt}`
+            defaultCard.description = newPrompt
+            console.info('[index.vue] No relevant knowledge found, added no-knowledge instruction to prompt (prepended)')
+            console.info('[index.vue] No-knowledge context:', noKnowledgeContext.substring(0, 200))
+            console.info('[index.vue] Full system prompt length:', newPrompt.length)
+            console.info('[index.vue] System prompt starts with:', newPrompt.substring(0, 400))
           }
-          console.info('[index.vue] No relevant knowledge found, using base prompt')
         }
       }
       catch (error) {
-        console.error('[index.vue] Failed to query knowledge DB with reranking:', error)
+        console.error('[index.vue] Failed to query knowledge DB with topic selection:', error)
         // Continue with original system prompt on error
       }
     }, { persistent: true }) // Mark this hook as persistent

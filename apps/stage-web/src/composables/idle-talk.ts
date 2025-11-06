@@ -44,6 +44,16 @@ export interface IdleTalkConfig {
 // Export the idle talking state so other composables can check it
 export const isCurrentlyIdleTalking = ref(false)
 
+// Shared state for topic continuation instance
+// Used by index.vue to access used knowledge IDs for exclusion
+const _topicContinuationState = {
+  instance: null as ReturnType<typeof useTopicContinuation> | null,
+}
+
+export function getTopicContinuationInstance(): ReturnType<typeof useTopicContinuation> | null {
+  return _topicContinuationState.instance
+}
+
 export function useIdleTalk(config: IdleTalkConfig) {
   const chatStore = useChatStore()
   const consciousnessStore = useConsciousnessStore()
@@ -55,6 +65,9 @@ export function useIdleTalk(config: IdleTalkConfig) {
     maxContinuation: config.maxContextContinuation,
     enabled: config.continueContext,
   })
+
+  // Store instance for use by index.vue
+  _topicContinuationState.instance = topicContinuation
 
   const isEnabled = ref(config.enabled)
   const lastInteractionTime = ref(Date.now())

@@ -56,6 +56,7 @@ export function useKnowledgeDB() {
   const isLoading = ref(false)
   const error = ref<Error | null>(null)
   const instructionText = ref<string | null>(null)
+  const noKnowledgeInstructionText = ref<string | null>(null)
 
   /**
    * Load instruction text from file
@@ -86,17 +87,50 @@ export function useKnowledgeDB() {
   }
 
   /**
+   * Load no-knowledge instruction text from file
+   * Loads once and caches the result
+   */
+  async function loadNoKnowledgeInstructionText(): Promise<string> {
+    // Return cached version if already loaded
+    if (noKnowledgeInstructionText.value !== null) {
+      return noKnowledgeInstructionText.value
+    }
+
+    try {
+      const response = await fetch('/prompts/no-knowledge-instruction.md')
+      if (!response.ok) {
+        throw new Error(`Failed to load no-knowledge instruction: ${response.status}`)
+      }
+      const text = await response.text()
+      noKnowledgeInstructionText.value = text
+      return text
+    }
+    catch (err) {
+      console.warn('[useKnowledgeDB] Failed to load no-knowledge instruction file, using default', err)
+      // Fallback to simple default instruction
+      const defaultInstruction = `## 知識の限界について
+
+このトピックについて、あなたは詳しい知識や経験を持っていません。
+「個人的にはあまり詳しくないけど」「よく知らないんだけど、一般論で言うと」のような前置きをして、
+正直に知識の限界を示してください。知ったかぶりをせず、一般的な見解や推測程度に留めて回答してください。`
+      noKnowledgeInstructionText.value = defaultInstruction
+      return defaultInstruction
+    }
+  }
+
+  /**
    * Query the knowledge database for relevant information
    *
    * @param query - Search query text
    * @param options - Optional query parameters
    * @param options.limit - Maximum number of results to return
    * @param options.threshold - Minimum similarity score (0-1)
+   * @param options.excludeIds - Array of post IDs to exclude from results
    * @returns Promise with knowledge results
    */
   async function queryKnowledge(
     query: string,
-    options?: { limit?: number, threshold?: number },
+    options?: { limit?: number, threshold?: number, excludeIds?: string[] },
   ): Promise<KnowledgeResponse | null> {
     // Skip if knowledge DB is disabled
     if (!config.enabled) {
@@ -122,7 +156,14 @@ export function useKnowledgeDB() {
       url.searchParams.set('limit', limit.toString())
       url.searchParams.set('threshold', threshold.toString())
 
-      console.info(`[useKnowledgeDB] Querying: ${query}`)
+      if (options?.excludeIds && options.excludeIds.length > 0) {
+        url.searchParams.set('excludeIds', options.excludeIds.join(','))
+      }
+
+      console.info(
+        `[useKnowledgeDB] Querying: ${query}`,
+        options?.excludeIds ? `(excluding ${options.excludeIds.length} IDs)` : '',
+      )
 
       const response = await fetch(url.toString())
 
@@ -230,6 +271,18 @@ export function useKnowledgeDB() {
     return `\n\n${instruction}\n\n${formattedResults}\n`
   }
 
+  /**
+   * Format no-knowledge instruction for injection into system prompt
+   * Used when no relevant knowledge is found in the database
+   *
+   * @returns Formatted text for system prompt indicating lack of knowledge
+   */
+  async function formatNoKnowledgeForPrompt(): Promise<string> {
+    const instruction = await loadNoKnowledgeInstructionText()
+    console.info('[useKnowledgeDB] Loaded no-knowledge instruction:', instruction.substring(0, 100))
+    return `\n\n${instruction}\n`
+  }
+
   return {
     config,
     isLoading,
@@ -237,5 +290,6 @@ export function useKnowledgeDB() {
     queryKnowledge,
     getRandomTopic,
     formatKnowledgeForPrompt,
+    formatNoKnowledgeForPrompt,
   }
 }

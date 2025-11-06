@@ -71,10 +71,16 @@ app.get('/posts/source/:source', async (req, res) => {
 // Knowledge query endpoint (for RAG integration)
 app.get('/knowledge', async (req, res) => {
   try {
-    const { query, limit = 10, threshold = 0.3 } = req.query
+    const { query, limit = 10, threshold = 0.3, excludeIds } = req.query
 
     if (!query || typeof query !== 'string') {
       return res.status(400).json({ error: 'Query parameter is required' })
+    }
+
+    // Parse excludeIds if provided (comma-separated string)
+    let excludeIdArray: string[] = []
+    if (excludeIds && typeof excludeIds === 'string') {
+      excludeIdArray = excludeIds.split(',').map(id => id.trim()).filter(id => id.length > 0)
     }
 
     // Generate embedding for the query
@@ -87,6 +93,14 @@ app.get('/knowledge', async (req, res) => {
 
     const queryVector = embeddingResult.embedding
     const vectorString = `[${queryVector.join(',')}]`
+
+    // Build WHERE clause with optional exclusions
+    let whereClause = sql`${postsTable.content_vector_1536} IS NOT NULL`
+
+    if (excludeIdArray.length > 0) {
+      // Add exclusion condition: id NOT IN (excludeIds)
+      whereClause = sql`${postsTable.content_vector_1536} IS NOT NULL AND ${postsTable.id} NOT IN (${sql.raw(excludeIdArray.map(id => `'${id}'`).join(','))})`
+    }
 
     // Perform vector similarity search using cosine distance
     // cosine distance operator: <=> (lower is more similar)
@@ -102,7 +116,7 @@ app.get('/knowledge', async (req, res) => {
         similarity: sql<number>`1 - (${postsTable.content_vector_1536} <=> ${vectorString}::vector)`,
       })
       .from(postsTable)
-      .where(sql`${postsTable.content_vector_1536} IS NOT NULL`)
+      .where(whereClause)
       .orderBy(sql`${postsTable.content_vector_1536} <=> ${vectorString}::vector`)
       .limit(Number(limit))
 

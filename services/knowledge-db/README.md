@@ -203,6 +203,40 @@ This script tests various query types (exact matches, related topics, peripheral
 
 Based on testing, **threshold 0.3-0.4** is recommended for balanced RAG integration.
 
+### Testing No-Knowledge Response Feature
+
+Test script to verify that the system appropriately expresses lack of knowledge when no relevant information is found:
+
+```bash
+make test-no-knowledge
+```
+
+**What it tests:**
+- Topic continuation with unrelated topics (e.g., "駅伝" - Japanese relay race)
+- Prompt generation when Knowledge DB returns 0 results
+- LLM response includes mandatory opening phrases:
+  - "ごめん、そのジャンルは正直あまり詳しくないんだけど..." (Sorry, I honestly don't know much about that genre, but...)
+  - "実はそれについては詳しくないんだよね。一般論で言うと..." (Actually, I don't know much about that. Generally speaking...)
+  - "僕、その分野は専門外なんだけど、聞いた話だと..." (I'm not an expert in that field, but from what I've heard...)
+
+**Expected results:**
+- System prompt contains "【最優先ルール】知識制約モード" (Priority Rule: Knowledge Constraint Mode) **at the beginning**
+- LLM response starts with one of the mandatory phrases
+- No personal experiences mentioned (e.g., "僕も〜" / "I also~")
+- No specific proper nouns used (e.g., "箱根駅伝" / specific event names)
+- Character maintains honesty and consistency without pretending to know
+
+**Implementation details:**
+- Prompt file: `apps/stage-web/public/prompts/no-knowledge-instruction.md`
+- Applied to: Direct chat (`index.vue`) and topic continuation (`useTopicContinuation.ts`)
+- Key technique: Prepending to system prompt (not appending) for higher LLM priority
+- Test file: `apps/stage-web/src/test-no-knowledge-continuation.ts`
+
+**Why prepending works:**
+- LLMs prioritize instructions at the beginning of system prompts
+- Appending resulted in instructions being ignored
+- Prepending with separator `---` ensures the constraint is respected
+
 ### Makefile Commands
 
 From the project root directory:

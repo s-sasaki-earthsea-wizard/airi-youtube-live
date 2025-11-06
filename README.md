@@ -23,7 +23,7 @@
 > - YouTube Live Chat Bot - Enable AIRI to interact with viewers during live streams
 >   - **Rule-based Comment Filter** - Intelligent noise filtering for YouTube Live chat (filters out "www", "草", "888", etc.)
 > - Knowledge Database - PostgreSQL + pgvector based RAG system for character knowledge
-> - **Query Expansion (Phase 1)** - LLM-powered keyword expansion for improved Knowledge DB search accuracy
+> - **Query Expansion & Dynamic Topic Selection** - LLM-powered keyword expansion with intelligent filtering (selects only truly relevant topics, 0-3 results dynamically)
 > - YouTube Streaming Mode - Optimized UI for live broadcasting with configurable visibility controls
 > - **Custom VRM Model Support** - Use your own VRM avatars with environment variable configuration (perfect for OBS Browser Source)
 >
