@@ -78,6 +78,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - [2025-10-20: Topic Continuation Unification](./.claude-notes/sessions/2025-10-20-topic-continuation.md) - トピック継続ロジックの共通化とチャット継続機能の実装
 - [2025-10-21: YouTube Comment Processing Fix](./.claude-notes/sessions/2025-10-21-youtube-comment-fix.md) - YouTubeコメント処理の致命的バグ修正（WebSocket初期化、イベントリスナー、readyState）
 - [2025-10-27: Rule-based Comment Filter](./.claude-notes/sessions/2025-10-27-comment-filter.md) - YouTubeコメントのルールベースノイズフィルタリング機能の実装
+- [2025-11-06: Dynamic Topic Association](./.claude-notes/sessions/2025-11-06-dynamic-topic-association.md) - トピック継続時の動的な話題連想機能の実装（Query Expansion + 使用済み知識除外）
 
 ## 将来の拡張計画
 
@@ -146,6 +147,11 @@ Claude Codeを使ってこのプロジェクトに貢献する場合：
     - プロンプトファイル: `/prompts/no-knowledge-instruction.md`
   - 適用範囲：直接チャット・トピック継続の両方
   - テストコマンド: `make test-no-knowledge`
+  - **動的トピック連想** (2025-11-06追加)
+    - 二段階クエリ：トピック継続 + システムプロンプトで異なる視点から検索
+    - Query Expansion: LLMベースのキーワード展開で関連話題を発見
+    - 使用済み知識除外: 同じ知識の繰り返しを防止
+    - 環境変数: `VITE_TOPIC_CONTINUATION_LIMIT`, `VITE_TOPIC_CONTINUATION_THRESHOLD`, `VITE_TOPIC_CONTINUATION_MAX_KEYWORDS`
 - ✅ **トピック継続機能** - ユーザーチャットとアイドルトークの統一的な会話継続
   - `useTopicContinuation` composableによる共通ロジック
   - チャット入力からの自動継続（デフォルト: 3回）
@@ -170,5 +176,5 @@ Claude Codeを使ってこのプロジェクトに貢献する場合：
 
 ---
 
-**最終更新**: 2025-11-05
+**最終更新**: 2025-11-06
 **Claude Code バージョン**: Sonnet 4.5 (claude-sonnet-4-5-20250929)

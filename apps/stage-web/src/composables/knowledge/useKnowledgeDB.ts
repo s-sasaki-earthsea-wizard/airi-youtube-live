@@ -125,11 +125,12 @@ export function useKnowledgeDB() {
    * @param options - Optional query parameters
    * @param options.limit - Maximum number of results to return
    * @param options.threshold - Minimum similarity score (0-1)
+   * @param options.excludeIds - Array of post IDs to exclude from results
    * @returns Promise with knowledge results
    */
   async function queryKnowledge(
     query: string,
-    options?: { limit?: number, threshold?: number },
+    options?: { limit?: number, threshold?: number, excludeIds?: string[] },
   ): Promise<KnowledgeResponse | null> {
     // Skip if knowledge DB is disabled
     if (!config.enabled) {
@@ -155,7 +156,14 @@ export function useKnowledgeDB() {
       url.searchParams.set('limit', limit.toString())
       url.searchParams.set('threshold', threshold.toString())
 
-      console.info(`[useKnowledgeDB] Querying: ${query}`)
+      if (options?.excludeIds && options.excludeIds.length > 0) {
+        url.searchParams.set('excludeIds', options.excludeIds.join(','))
+      }
+
+      console.info(
+        `[useKnowledgeDB] Querying: ${query}`,
+        options?.excludeIds ? `(excluding ${options.excludeIds.length} IDs)` : '',
+      )
 
       const response = await fetch(url.toString())
 

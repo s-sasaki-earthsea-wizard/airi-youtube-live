@@ -21,6 +21,7 @@ export interface ExpandedSearchOptions {
   limit?: number
   threshold?: number
   maxKeywords?: number
+  excludeIds?: string[]
 }
 
 export interface ExpandedSearchResult {
@@ -115,6 +116,7 @@ export function useExpandedSearch() {
         const response = await queryKnowledge(query, {
           limit: options?.limit ?? config.limit,
           threshold: options?.threshold ?? config.threshold,
+          excludeIds: options?.excludeIds,
         })
 
         return {
@@ -134,11 +136,13 @@ export function useExpandedSearch() {
         queryKnowledge(query, {
           limit: options?.limit ?? config.limit,
           threshold: options?.threshold ?? config.threshold,
+          excludeIds: options?.excludeIds,
         }),
         ...expandedKeywords.map(keyword =>
           queryKnowledge(keyword, {
             limit: options?.limit ?? config.limit,
             threshold: options?.threshold ?? config.threshold,
+            excludeIds: options?.excludeIds,
           }),
         ),
       ]

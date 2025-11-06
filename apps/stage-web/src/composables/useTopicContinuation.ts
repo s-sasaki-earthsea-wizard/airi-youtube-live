@@ -16,25 +16,53 @@
  * - Call resetContext() to start a new topic
  */
 
+import process from 'node:process'
+
 import { ref } from 'vue'
 
-import { useKnowledgeDB } from './knowledge'
+import { useExpandedSearch } from './knowledge/useExpandedSearch'
 
 export interface TopicContinuationConfig {
   maxContinuation: number
   enabled: boolean
 }
 
+export interface TopicContinuationSearchConfig {
+  limit: number
+  threshold: number
+  maxKeywords: number
+}
+
+/**
+ * Get topic continuation search configuration from environment variables
+ *
+ * Note: Supports both Vite (import.meta.env) and Node.js (process.env) environments
+ */
+function getTopicContinuationSearchConfig(): TopicContinuationSearchConfig {
+  // Support both Vite and Node.js environments
+  const env = typeof import.meta !== 'undefined' && import.meta.env
+    ? import.meta.env
+    : process.env
+
+  return {
+    limit: Number.parseInt(env.VITE_TOPIC_CONTINUATION_LIMIT || '3', 10),
+    threshold: Number.parseFloat(env.VITE_TOPIC_CONTINUATION_THRESHOLD || '0.6'),
+    maxKeywords: Number.parseInt(env.VITE_TOPIC_CONTINUATION_MAX_KEYWORDS || '5', 10),
+  }
+}
+
 /**
  * Topic Continuation Composable
  */
 export function useTopicContinuation(config: TopicContinuationConfig) {
-  const knowledgeDB = useKnowledgeDB()
+  const expandedSearch = useExpandedSearch()
+  const searchConfig = getTopicContinuationSearchConfig()
 
   const lastResponse = ref<string | null>(null)
   const initialTopic = ref<string | null>(null)
   const contextContinuationCount = ref(0)
   const instructionText = ref<string | null>(null)
+  const usedKnowledgeIds = ref<Set<string>>(new Set())
 
   /**
    * Load instruction text from file
@@ -76,6 +104,7 @@ export function useTopicContinuation(config: TopicContinuationConfig) {
   /**
    * Build continuation prompt based on last response
    * Includes related knowledge from Knowledge DB
+   * Searches using both initial topic and last response to enable deeper associations
    * If no related knowledge is found, instructs to speak from a general perspective
    */
   async function buildContinuationPrompt(): Promise<string> {
@@ -86,21 +115,56 @@ export function useTopicContinuation(config: TopicContinuationConfig) {
     console.info('[TopicContinuation] Building continuation prompt')
     console.info(`[TopicContinuation] Continuation count: ${contextContinuationCount.value + 1}/${config.maxContinuation}`)
     console.info(`[TopicContinuation] Previous response: ${lastResponse.value.substring(0, 50)}...`)
+    if (initialTopic.value) {
+      console.info(`[TopicContinuation] Initial topic: ${initialTopic.value.substring(0, 50)}...`)
+    }
 
     // Search for related knowledge to enrich the continuation
+    // Use both initial topic and last response to enable deeper topic associations
+    // Uses expanded search with query expansion for better topic discovery
     let relatedKnowledge = ''
     let hasKnowledge = false
     try {
-      const relatedResults = await knowledgeDB.queryKnowledge(lastResponse.value, {
-        limit: 3,
-        threshold: 0.6,
+      // Build combined query: include both initial topic and recent context
+      const queryText = initialTopic.value
+        ? `${initialTopic.value} ${lastResponse.value}`
+        : lastResponse.value
+
+      console.info(`[TopicContinuation] Querying Knowledge DB with combined context (${queryText.length} chars)`)
+      console.info('[TopicContinuation] Using expanded search with query expansion')
+
+      // Use expanded search instead of simple query for better topic association
+      // Exclude already used knowledge IDs to prevent repetition
+      const excludeIds = Array.from(usedKnowledgeIds.value)
+      console.info(
+        `[TopicContinuation] Excluding ${excludeIds.length} already used knowledge IDs`,
+      )
+
+      const searchResult = await expandedSearch.searchWithExpansion(queryText, {
+        limit: searchConfig.limit,
+        threshold: searchConfig.threshold,
+        maxKeywords: searchConfig.maxKeywords,
+        excludeIds,
       })
 
-      if (relatedResults && relatedResults.results.length > 0) {
+      if (searchResult.expandedKeywords && searchResult.expandedKeywords.length > 0) {
+        console.info(`[TopicContinuation] Query expanded to keywords:`, searchResult.expandedKeywords)
+      }
+
+      if (searchResult.response && searchResult.response.results.length > 0) {
         hasKnowledge = true
-        console.info(`[TopicContinuation] Found ${relatedResults.results.length} related knowledge items`)
+        console.info(
+          `[TopicContinuation] Found ${searchResult.response.results.length} related knowledge items `
+          + `(strategy: ${searchResult.searchStrategy})`,
+        )
+
+        // Track used knowledge IDs
+        searchResult.response.results.forEach((result) => {
+          usedKnowledgeIds.value.add(result.id)
+        })
+
         const instruction = await loadInstructionText()
-        relatedKnowledge = `\n${instruction}\n\n${relatedResults.results
+        relatedKnowledge = `\n${instruction}\n\n${searchResult.response.results
           .map(k => `- ${k.content.substring(0, 100)}${k.content.length > 100 ? '...' : ''}`)
           .join('\n')
         }\n`
@@ -157,7 +221,8 @@ ${relatedKnowledge}
     lastResponse.value = null
     initialTopic.value = null
     contextContinuationCount.value = 0
-    console.info('[TopicContinuation] Context reset')
+    usedKnowledgeIds.value.clear()
+    console.info('[TopicContinuation] Context reset (including used knowledge IDs)')
   }
 
   /**
@@ -174,6 +239,14 @@ ${relatedKnowledge}
     return contextContinuationCount.value >= config.maxContinuation
   }
 
+  /**
+   * Get array of used knowledge IDs
+   * These IDs should be excluded from system prompt queries
+   */
+  function getUsedKnowledgeIds(): string[] {
+    return Array.from(usedKnowledgeIds.value)
+  }
+
   return {
     // State
     lastResponse,
@@ -187,5 +260,6 @@ ${relatedKnowledge}
     resetContext,
     getContinuationCount,
     isMaxReached,
+    getUsedKnowledgeIds,
   }
 }

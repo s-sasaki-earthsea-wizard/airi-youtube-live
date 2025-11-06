@@ -14,7 +14,7 @@ import MobileHeader from '../components/Layouts/MobileHeader.vue'
 import MobileInteractiveArea from '../components/Layouts/MobileInteractiveArea.vue'
 import AnimatedWave from '../components/Widgets/AnimatedWave.vue'
 
-import { isCurrentlyIdleTalking } from '../composables/idle-talk'
+import { getTopicContinuationInstance, isCurrentlyIdleTalking } from '../composables/idle-talk'
 import { useExpandedSearch, useKnowledgeDBIntegration } from '../composables/knowledge'
 import { useStreamingMode } from '../composables/streaming-mode'
 import { themeColorFromPropertyOf, useThemeColor } from '../composables/theme-color'
@@ -51,25 +51,31 @@ onMounted(() => {
 
     chatStore.onBeforeMessageComposed(async (userMessage: string) => {
       console.info('[index.vue] Knowledge hook triggered for message:', userMessage)
-
-      // Skip Knowledge DB query during idle talk
       if (isCurrentlyIdleTalking.value) {
-        console.info('[index.vue] Skipping Knowledge DB query (idle talk in progress)')
-        // Reset to base prompt to avoid contamination from previous context
-        const { baseSystemPrompt } = integrationState
-        const defaultCard = airiCardStore.getCard('default')
-        if (defaultCard) {
-          defaultCard.description = baseSystemPrompt
-          console.info('[index.vue] Reset to base system prompt for idle talk')
-        }
-        return
+        console.info('[index.vue] Processing Knowledge DB query during topic continuation')
       }
 
       try {
         const { baseSystemPrompt, knowledgeDB } = integrationState
 
+        // Get used knowledge IDs from topic continuation to avoid repetition
+        const excludeIds: string[] = []
+        const continuationInstance = getTopicContinuationInstance()
+        if (continuationInstance) {
+          const usedIds = continuationInstance.getUsedKnowledgeIds()
+          excludeIds.push(...usedIds)
+          if (usedIds.length > 0) {
+            console.info(`[index.vue] Excluding ${usedIds.length} knowledge IDs used in topic continuation`)
+          }
+        }
+
         // Query knowledge database with expanded search + LLM-based topic selection
-        const searchResult = await searchWithExpansion(userMessage)
+        // This works for both direct user input and topic continuation prompts
+        // For topic continuation, the userMessage contains both the previous response
+        // and related knowledge, which will be further expanded and queried
+        const searchResult = await searchWithExpansion(userMessage, {
+          excludeIds,
+        })
 
         if (searchResult.response && searchResult.response.results.length > 0) {
           const selectedResults = searchResult.response.results
