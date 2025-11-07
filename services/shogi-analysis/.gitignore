@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Kifu data files (keep examples only)
+data/sample-kifu/*.kif
+data/sample-kifu/*.ki2
+data/sample-kifu/*.csa
+
+# Keep example files
+!data/sample-kifu/example*.kif
+!data/sample-kifu/example*.ki2
+!data/sample-kifu/example*.csa
