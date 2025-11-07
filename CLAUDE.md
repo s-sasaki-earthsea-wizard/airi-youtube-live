@@ -104,12 +104,19 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 
 **実装フェーズ**:
 
-1. **Phase 1: スタンドアロン棋譜解析モジュール** 🚧 進行中
+1. **Phase 1: スタンドアロン棋譜解析モジュール** ✅ 完了
    - 📁 `/services/shogi-analysis/`
    - 🎯 ローカル棋譜ファイル（KIF/KI2/CSA）の解析
    - 📝 基本的な実況コメント生成（テンプレートベース）
    - 💻 CLIインターフェース
    - ✅ 単体テスト可能な独立モジュール
+
+1.5. **Phase 1.5: LLM実況生成** ✅ 完了 (2025-11-07)
+   - 🤖 OpenRouter互換APIサポート
+   - 📝 Markdownベースのプロンプト管理システム (`/prompts/`)
+   - 🎯 序盤・中盤・終盤に応じた解説生成
+   - ⚙️ コメント間隔のカスタマイズ (`--interval` オプション)
+   - 🔄 テンプレートベースとの選択可能 (`--llm` フラグ)
 
 2. **Phase 2: AIRI Server統合** 📋 計画中
    - 📁 `/services/shogi-commentary-bot/`
