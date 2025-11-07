@@ -79,6 +79,77 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - [2025-10-21: YouTube Comment Processing Fix](./.claude-notes/sessions/2025-10-21-youtube-comment-fix.md) - YouTubeコメント処理の致命的バグ修正（WebSocket初期化、イベントリスナー、readyState）
 - [2025-10-27: Rule-based Comment Filter](./.claude-notes/sessions/2025-10-27-comment-filter.md) - YouTubeコメントのルールベースノイズフィルタリング機能の実装
 - [2025-11-06: Dynamic Topic Association](./.claude-notes/sessions/2025-11-06-dynamic-topic-association.md) - トピック継続時の動的な話題連想機能の実装（Query Expansion + 使用済み知識除外）
+- [2025-11-07: Shogi Commentary Bot - Planning](./.claude-notes/sessions/2025-11-07-shogi-commentary-bot.md) - 将棋棋譜実況ボットの設計と段階的実装計画
+
+## 開発中の機能
+
+### shogi-analysis（将棋棋譜解析・実況）
+
+**ブランチ**: `dev/shogi-commentary-bot`
+
+**概要**: 将棋のタイトル戦などの棋譜を解析し、実況コメントを生成するシステム
+
+**目的**:
+
+- 日本語圏視聴者向けコンテンツの拡充
+- YouTube配信での将棋タイトル戦実況
+- LLMを活用した自動実況生成
+
+**技術スタック**:
+
+- 棋譜解析: `json-kifu-format`, `shogi.js`
+- 対応形式: KIF, KI2, CSA
+- 実装言語: TypeScript
+- 実況生成: テンプレートベース → LLM統合（段階的）
+
+**実装フェーズ**:
+
+1. **Phase 1: スタンドアロン棋譜解析モジュール** 🚧 進行中
+   - 📁 `/services/shogi-analysis/`
+   - 🎯 ローカル棋譜ファイル（KIF/KI2/CSA）の解析
+   - 📝 基本的な実況コメント生成（テンプレートベース）
+   - 💻 CLIインターフェース
+   - ✅ 単体テスト可能な独立モジュール
+
+2. **Phase 2: AIRI Server統合** 📋 計画中
+   - 📁 `/services/shogi-commentary-bot/`
+   - 🔗 `@proj-airi/server-sdk` でAIRI Serverと連携
+   - 🔊 実況コメントのTTS音声化
+   - ⏱️ タイミング制御（1手ごとにN秒待機）
+
+3. **Phase 3: リアルタイム棋譜取得** 📋 計画中
+   - 🌐 「ふわりと将棋」等からのスクレイピング
+   - 🔄 ポーリング（30秒ごとに新しい手をチェック）
+   - 📡 WebSocketイベント送信
+
+4. **Phase 4: stage-web UI統合** 📋 計画中
+   - 🎨 将棋盤コンポーネント
+   - 🎮 再生コントロール（再生/停止/次の手）
+   - 📊 評価値グラフ（オプション）
+
+5. **Phase 5: 高度な機能** 📋 構想中
+   - 🤖 LLMベースの詳細実況
+   - 🧠 将棋AIエンジン統合（YaneuraOu等）
+   - 📚 定跡データベース参照
+
+**ブランチ戦略**:
+
+```text
+main
+ └── dev/shogi-commentary-bot
+      ├── feat/kifu-parser           (Phase 1a: 棋譜解析)
+      ├── feat/commentary-generator  (Phase 1b: 実況生成)
+      ├── feat/airi-integration     (Phase 2)
+      ├── feat/realtime-fetcher     (Phase 3)
+      └── feat/stage-web-ui         (Phase 4)
+```
+
+**参考資料**:
+
+- [Kifu-for-JS](https://github.com/na2hiro/Kifu-for-JS)
+- [Shogi.js](https://github.com/na2hiro/Shogi.js)
+- [ふわりと将棋](https://fuwalete.com/)
+- [将棋タイトル戦](https://shogititle.nobody.jp/)
 
 ## 将来の拡張計画
 
@@ -176,5 +247,5 @@ Claude Codeを使ってこのプロジェクトに貢献する場合：
 
 ---
 
-**最終更新**: 2025-11-06
+**最終更新**: 2025-11-07
 **Claude Code バージョン**: Sonnet 4.5 (claude-sonnet-4-5-20250929)

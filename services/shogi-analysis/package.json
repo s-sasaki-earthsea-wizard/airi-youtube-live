@@ -1,0 +1,31 @@
+{
+  "name": "@proj-airi/shogi-analysis",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shogi game kifu analysis and commentary generation",
+  "author": {
+    "name": "syota-sasaki",
+    "email": "syota.sasaki@earthsea-wizard.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/moeru-ai/airi.git",
+    "directory": "services/shogi-analysis"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "analyze": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@guiiai/logg": "catalog:",
+    "json-kifu-format": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.6.0"
+  }
+}
