@@ -48,7 +48,7 @@ tsx src/index.ts data/sample-kifu/example1.kif
 
 ## 出力例
 
-```
+```text
 === 対局実況 ===
 
 竜王戦、藤井聡太先手、羽生善治後手の対局が始まりました。
@@ -63,6 +63,31 @@ tsx src/index.ts data/sample-kifu/example1.kif
 ```
 
 ## 開発
+
+### テスト
+
+ユニットテストを実行：
+
+```bash
+# テスト実行（watch mode）
+npm test
+
+# 1回だけ実行
+npm run test:run
+```
+
+**テストカバレッジ**：
+
+- 棋譜パーサー（KIF/KI2/CSA形式）
+- 実況コメント生成
+- 特殊な手（投了、中断など）の処理
+- エラーハンドリング
+
+**テストファイル**：
+
+- `tests/core/kifu-parser.test.ts` - 棋譜解析のテスト
+- `tests/commentary.test.ts` - 実況生成のテスト
+- `tests/fixtures/` - テスト用サンプル棋譜
 
 ### 型チェック
 

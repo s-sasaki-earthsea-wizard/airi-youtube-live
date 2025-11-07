@@ -3,7 +3,9 @@ import type { KifuFormat, ParsedKifu } from '../types'
 import { readFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 
-import { Parsers } from 'json-kifu-format'
+import jkf from 'json-kifu-format'
+
+const { Parsers } = jkf
 
 /**
  * Kifu (game record) parser
@@ -99,7 +101,15 @@ export class KifuParser {
   private formatMove(jkfMove: any): string {
     // Handle special moves
     if (!jkfMove.move) {
-      return jkfMove.special || '投了'
+      // Map CSA special move codes to Japanese
+      const specialMoves: Record<string, string> = {
+        TORYO: '投了',
+        CHUDAN: '中断',
+        SENNICHITE: '千日手',
+        TIME_UP: '時間切れ',
+        ILLEGAL_MOVE: '反則負け',
+      }
+      return specialMoves[jkfMove.special] || jkfMove.special || '投了'
     }
 
     const { to, piece, same } = jkfMove.move

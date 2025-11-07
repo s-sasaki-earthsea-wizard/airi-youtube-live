@@ -17,6 +17,8 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "analyze": "tsx src/index.ts",
+    "test": "vitest",
+    "test:run": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -26,6 +28,7 @@
   "devDependencies": {
     "@types/node": "^24.7.0",
     "tsx": "^4.20.6",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
   }
 }
