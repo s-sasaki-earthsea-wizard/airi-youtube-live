@@ -3,6 +3,14 @@ import type { LLMConfig } from './config'
 import OpenAI from 'openai'
 
 /**
+ * A single message in a chat conversation
+ */
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+/**
  * LLM client for generating commentary
  */
 export class LLMClient {
@@ -31,6 +39,35 @@ export class LLMClient {
             content: prompt,
           },
         ],
+        temperature: 0.7,
+        max_tokens: 500,
+      })
+
+      const content = response.choices[0]?.message?.content
+      if (!content) {
+        throw new Error('No response from LLM')
+      }
+
+      return content.trim()
+    }
+    catch (error) {
+      throw new Error(`LLM API error: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  /**
+   * Generate a chat completion from a full message history.
+   * Unlike generateText, this preserves a system prompt and prior turns,
+   * which the roleplay commentary relies on for move-to-move continuity.
+   * @param messages - The conversation history (system / user / assistant)
+   * @param model - The model to use
+   * @returns Generated text
+   */
+  async generateChat(messages: ChatMessage[], model: string): Promise<string> {
+    try {
+      const response = await this.client.chat.completions.create({
+        model,
+        messages,
         temperature: 0.7,
         max_tokens: 500,
       })
