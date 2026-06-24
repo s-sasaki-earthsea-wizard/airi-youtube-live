@@ -1,0 +1,32 @@
+{
+  "name": "@proj-airi/shogi-commentary-bot",
+  "type": "module",
+  "private": true,
+  "description": "Shogi kifu commentary bot for AIRI: streams moves to stage-web for live character commentary",
+  "author": {
+    "name": "syota-sasaki",
+    "email": "syota.sasaki@earthsea-wizard.com"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/moeru-ai/airi.git",
+    "directory": "services/shogi-commentary-bot"
+  },
+  "scripts": {
+    "start": "dotenvx run -f .env -f .env.local --overload --ignore=MISSING_ENV_FILE -- tsx src/index.ts",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dotenvx/dotenvx": "^1.51.0",
+    "@guiiai/logg": "catalog:",
+    "@proj-airi/server-sdk": "workspace:*",
+    "@proj-airi/shogi-analysis": "workspace:*",
+    "dotenv": "^17.2.3",
+    "tsx": "^4.20.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24.7.0"
+  }
+}

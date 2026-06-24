@@ -14,6 +14,10 @@
     "url": "https://github.com/moeru-ai/airi.git",
     "directory": "services/shogi-analysis"
   },
+  "exports": {
+    "./parser": "./src/core/kifu-parser.ts",
+    "./types": "./src/types.ts"
+  },
   "scripts": {
     "dev": "tsx src/index.ts",
     "analyze": "tsx src/index.ts",
