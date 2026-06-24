@@ -5,6 +5,8 @@ import { extname } from 'node:path'
 
 import jkf from 'json-kifu-format'
 
+import { getGamePhase } from '../phase'
+
 const { Parsers } = jkf
 
 /**
@@ -84,13 +86,18 @@ export class KifuParser {
    */
   private extractMoves(jkfMoves: any[]): ParsedKifu['moves'] {
     // Skip the first element (initial position)
-    return jkfMoves.slice(1).map((jkfMove, index) => ({
-      moveNumber: index + 1,
-      player: (index % 2 === 0) ? '先手' : '後手',
-      move: this.formatMove(jkfMove),
-      timeSpent: jkfMove.time?.now,
-      comment: jkfMove.comments?.join(' '),
-    }))
+    return jkfMoves.slice(1).map((jkfMove, index) => {
+      const moveNumber = index + 1
+      return {
+        moveNumber,
+        player: (index % 2 === 0) ? '先手' as const : '後手' as const,
+        move: this.formatMove(jkfMove),
+        reading: this.formatMoveReading(jkfMove),
+        phase: getGamePhase(moveNumber),
+        timeSpent: jkfMove.time?.now,
+        comment: jkfMove.comments?.join(' '),
+      }
+    })
   }
 
   /**
@@ -132,24 +139,86 @@ export class KifuParser {
       RY: '龍',
     }
 
-    // Number to kanji mapping
-    const kanjiNumbers = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九']
-
-    // Format position
-    const x = kanjiNumbers[to.x]
-    const y = to.y
+    // File (筋) uses full-width arabic numerals, rank (段) uses kanji.
+    const fileNumbers = ['', '１', '２', '３', '４', '５', '６', '７', '８', '９']
+    const rankNumbers = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九']
 
     // Get piece name
     const pieceName = pieceNames[piece] || piece
 
-    // Check if move is "same position" (同)
-    if (same) {
-      return `同${pieceName}`
-    }
-
     // Promotion mark
     const promotion = jkfMove.move.promote ? '成' : ''
 
-    return `${x}${y}${pieceName}${promotion}`
+    // A move without a `from` square is a drop from hand (打).
+    const drop = jkfMove.move.from ? '' : '打'
+
+    // "Same square" recapture is written as 同, omitting the coordinates.
+    if (same) {
+      return `同${pieceName}${promotion}`
+    }
+
+    // Format position: file (x, full-width arabic) then rank (y, kanji)
+    const file = fileNumbers[to.x]
+    const rank = rankNumbers[to.y]
+
+    return `${file}${rank}${pieceName}${promotion}${drop}`
+  }
+
+  /**
+   * Generate the hiragana reading of a move for TTS.
+   * Pairs with formatMove so the commentary bot can hand the character LLM an
+   * explicit reading, avoiding mis-readings like "８四歩" → "はちはちふ".
+   * @param jkfMove - Move object from JKF
+   * @returns Hiragana reading (e.g., "ななろくふ", "ごろくふうち")
+   */
+  private formatMoveReading(jkfMove: any): string {
+    // Handle special moves
+    if (!jkfMove.move) {
+      const specialReadings: Record<string, string> = {
+        TORYO: 'とうりょう',
+        CHUDAN: 'ちゅうだん',
+        SENNICHITE: 'せんにちて',
+        TIME_UP: 'じかんぎれ',
+        ILLEGAL_MOVE: 'はんそくまけ',
+      }
+      return specialReadings[jkfMove.special] || 'とうりょう'
+    }
+
+    const { to, piece, from, same, promote } = jkfMove.move
+
+    // Read digits one at a time (7→なな, 4→よん, 9→きゅう), per the TTS guidance.
+    const numberReadings = ['', 'いち', 'に', 'さん', 'よん', 'ご', 'ろく', 'なな', 'はち', 'きゅう']
+
+    // Piece readings (TTS-friendly, per shogi-system-prompt.md guidance)
+    const pieceReadings: Record<string, string> = {
+      FU: 'ふ',
+      KY: 'きょう',
+      KE: 'けい',
+      GI: 'ぎん',
+      KI: 'きん',
+      KA: 'かく',
+      HI: 'ひ',
+      OU: 'ぎょく',
+      TO: 'と',
+      NY: 'なりきょう',
+      NK: 'なりけい',
+      NG: 'なりぎん',
+      UM: 'うま',
+      RY: 'りゅう',
+    }
+
+    const pieceReading = pieceReadings[piece] || piece
+    const promotionReading = promote ? 'なり' : ''
+    const dropReading = from ? '' : 'うち'
+
+    // "Same square" recapture is read as どう
+    if (same) {
+      return `どう${pieceReading}${promotionReading}`
+    }
+
+    const fileReading = numberReadings[to.x]
+    const rankReading = numberReadings[to.y]
+
+    return `${fileReading}${rankReading}${pieceReading}${promotionReading}${dropReading}`
   }
 }
