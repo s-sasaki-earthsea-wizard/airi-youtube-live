@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import type { OwnSide, RoleplayCommentaryResult } from './roleplay-commentary'
+import type { ParsedKifu } from './types'
 
 import process from 'node:process'
 
@@ -23,6 +24,7 @@ function parseArgs(args: string[]) {
     maxMoves: 40,
     intervalMoves: 10,
     json: false,
+    md: false,
     verbose: false,
   }
 
@@ -52,6 +54,9 @@ function parseArgs(args: string[]) {
     }
     else if (arg === '--json') {
       options.json = true
+    }
+    else if (arg === '--md') {
+      options.md = true
     }
     else if (arg === '--verbose' || arg === '-v') {
       options.verbose = true
@@ -83,6 +88,51 @@ function printRoleplayText(result: RoleplayCommentaryResult): void {
 }
 
 /**
+ * Print roleplay commentary as a Markdown document, suitable for saving as a
+ * sample transcript (e.g. `... --roleplay --md ... > sample.md`).
+ */
+function printRoleplayMarkdown(result: RoleplayCommentaryResult, kifu: ParsedKifu): void {
+  const { header } = kifu
+  const lines: string[] = []
+
+  lines.push('# なりきり将棋実況サンプル（さめ）')
+  lines.push('')
+  lines.push('> ⚠️ **既知の課題**: このサンプルは盤面状態を保持せず、各手を「直前までの文脈＋その手の情報」だけで生成しています。')
+  lines.push('> そのため駒の移動元を誤認したコメント（例: 別の駒の動きを「下げた」と解釈する等）が含まれます。')
+  lines.push('> 盤面認識を導入する前の **改善前ベースライン** として保存したものです。')
+  lines.push('')
+  lines.push('## 対局情報')
+  lines.push('')
+  lines.push('| 項目 | 内容 |')
+  lines.push('| --- | --- |')
+  if (header.tournament || header.title)
+    lines.push(`| 棋戦 | ${header.tournament || header.title} |`)
+  lines.push(`| 先手 | ${header.black ?? '不明'}${result.ownSide === '先手' ? '（← さめがなりきり）' : ''} |`)
+  lines.push(`| 後手 | ${header.white ?? '不明'}${result.ownSide === '後手' ? '（← さめがなりきり）' : ''} |`)
+  if (header.date)
+    lines.push(`| 対局日 | ${header.date} |`)
+  lines.push(`| 手数 | ${kifu.moves.length}手 |`)
+  lines.push('')
+  lines.push('## 実況')
+  lines.push('')
+  lines.push('### 対局開始')
+  lines.push('')
+  lines.push(`> ${result.greeting}`)
+  lines.push('')
+
+  for (const move of result.moves) {
+    const mark = move.player === '先手' ? '▲' : '△'
+    const role = move.isOwnMove ? '自分の手' : '相手の手'
+    lines.push(`### ${move.moveNumber}手目 ${mark}${move.move}（${move.reading}）〔${role}・${move.phase}〕`)
+    lines.push('')
+    lines.push(`> ${move.commentary ?? ''}`)
+    lines.push('')
+  }
+
+  console.info(lines.join('\n'))
+}
+
+/**
  * Main entry point
  */
 async function main() {
@@ -99,6 +149,7 @@ async function main() {
     console.info('  --side <sente|gote> なりきる側を明示指定（省略時: 名前判定→先手）')
     console.info('  --max-moves <N>    なりきり実況で生成する手数の上限（デフォルト: 40）')
     console.info('  --json             なりきり実況の結果を構造化JSONで出力')
+    console.info('  --md               なりきり実況をMarkdown文書で出力（サンプル保存用）')
     console.info('  --verbose, -v      詳細なログを表示')
     console.info('')
     console.info('例:')
@@ -119,8 +170,8 @@ async function main() {
   }
 
   try {
-    // In roleplay JSON mode, keep stdout clean for the structured payload.
-    const quiet = options.roleplay && options.json
+    // In roleplay JSON/Markdown mode, keep stdout clean for the document.
+    const quiet = options.roleplay && (options.json || options.md)
 
     // Parse kifu file
     if (!quiet) {
@@ -160,6 +211,8 @@ async function main() {
 
       if (options.json)
         console.info(JSON.stringify(result, null, 2))
+      else if (options.md)
+        printRoleplayMarkdown(result, kifu)
       else
         printRoleplayText(result)
 
